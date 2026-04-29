@@ -326,6 +326,7 @@ export const appRouter = router({
       )
       .mutation(async ({ input }) => {
         await db.updateGlobalSettings(input);
+        await db.recalculateAllRoutes();
         return { success: true };
       }),
   }),

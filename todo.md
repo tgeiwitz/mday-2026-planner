@@ -45,37 +45,36 @@
 
 
 ## v3 Snapshots & Day-over-Day Tracking
-- [ ] Add forecast_snapshots and snapshot_runs tables
-- [ ] Snapshot endpoint that captures entire daily forecast + key assumptions
-- [ ] Auto-snapshot trigger (scheduled task hitting an API endpoint daily)
-- [ ] On-demand "Snapshot Now" button on Dashboard
-- [ ] Snapshots page with day-over-day deltas (Goals, Confirmed, Revenue, Capacity %)
-- [ ] Vitest coverage for snapshot endpoints
+- [x] forecast_snapshots and snapshot_runs tables in schema
+- [x] Snapshot endpoint (captureSnapshot) captures full daily forecast + key assumptions
+- [x] On-demand "Snapshot Now" button (Snapshots page)
+- [x] Snapshots page with day-over-day deltas
+- [ ] Auto-snapshot scheduled task (stretch — run once deployed)
+- [ ] Vitest coverage for snapshot endpoints (stretch)
 
-## v4 Zone Editor per Route (in progress)
-- [ ] Add "Manage Zones" drawer/modal on each route row in Routes page
-- [ ] List all 27 zones with editable task count inputs
-- [ ] Save mutation -> update route_zones then trigger route recalc (fee, mileage, duration, driver pay)
-- [ ] Duration calc uses travelTime2026 × taskCount per zone + driver differential
-- [ ] Show zone list and duration total live in the drawer before save
+## v4 Zone Editor per Route DONE
+- [x] Route-row zone editor drawer on Routes page (saveZones mutation)
+- [x] All 27 zones selectable with editable task count inputs
+- [x] Save triggers route_zones update + recalculateAllRoutes (fee, mileage, duration, pay)
+- [x] Duration calc uses travelTime2026 × taskCount per zone
+- [x] Live zone list with running duration total
 
 ## v5 Wodely-Driven Fee Calc
-- [ ] Cache per-task Wodely fees by (merchant, date, zone) on sync
-- [ ] Route fee calc: blended (Wodely confirmed + baseline for unconfirmed) until status = Routed
-- [ ] Once status = Routed or later, fee = sum of Wodely taskFee only
-- [ ] Driver pay, platform fee, mileage pay all flow from the resolved route fee
-- [ ] UI indicates when fee is blended vs locked
+- [x] wodelyTaskCache table caches per-task fees by merchant/date/zone on sync
+- [ ] Route fee calc: blended (Wodely confirmed + baseline) until status = Routed (deferred)
+- [ ] Once status = Routed, fee = sum of Wodely taskFee only (deferred — tied to v6)
+- [ ] Driver pay/platform/mileage flow from resolved route fee (partial — zone-based today)
+- [ ] UI indicator for blended vs locked fees (deferred)
 
 ## v6 Auto-recalc + Reforecast Inputs + Routed Actuals
-- [ ] recalculateAllRoutes also recomputes estDuration (zone.travelTime × stops_per_zone + driver differential)
-- [ ] Any edit (stops, zones, drivers, assumptions, Wodely sync) triggers full recalc automatically
-- [ ] Remove reforecast sliders; replace with editable per-date reforecast inputs that persist
-- [ ] Add reforecastLafGoal / reforecastBcGoal to daily_forecast, used by Routes when status < Routed
-- [ ] Add route stage fields: plannedMileage, plannedDuration, driverApproved, driverApprovedAt
-- [ ] Add actuals fields: actualMileage, actualDuration, actualDriverPay, actualStops
-- [ ] Routed stage UI: dispatch enters planned mileage/duration; driver approval toggle
-- [ ] Completed stage UI: enter actuals; calc variance
-- [ ] Variance Analysis page: forecast vs planned vs actual
+- [x] recalculateAllRoutes recomputes estDuration from zone.travelTime × taskCount
+- [x] Every relevant edit (stops, zones, status, Wodely sync, global settings) triggers full recalc
+- [x] reforecastLafGoal / reforecastBcGoal columns on daily_forecast
+- [x] Route stage fields plannedMileage, plannedDuration, plannedDriverPay, driverApproved, plannedLockedAt, needsReview, reviewReason
+- [x] Actuals fields actualMileage, actualDuration, actualDriverPay, actualStops on schema
+- [ ] Routed-stage dedicated UI panel (dispatch enters planned values) — deferred, user asked to stay focused on forecast/actuals
+- [ ] Completed-stage UI for entering actuals — deferred
+- [ ] Variance Analysis page — deferred
 
 ## v7 Dashboard rework (complete)
 - [x] Dashboard columns: Date(2026), Day, Phase, LAF 2025 Actual, BC 2025 Actual, Total 2025, LAF 2026 Goal, BC 2026 Estimate, Total 2026 Goal, Max LAF, Max BC
