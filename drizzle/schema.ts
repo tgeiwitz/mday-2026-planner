@@ -60,6 +60,8 @@ export const zoneMetrics = mysqlTable("zone_metrics", {
   distance2026: decimal("distance2026", { precision: 8, scale: 2 }).notNull().default("0"),
   lafFee2026: decimal("lafFee2026", { precision: 8, scale: 2 }).notNull().default("0"),
   bcFee2026: decimal("bcFee2026", { precision: 8, scale: 2 }).notNull().default("0"),
+  lafVolume2025: int("laf_volume_2025").notNull().default(0),
+  bcVolume2025: int("bc_volume_2025").notNull().default(0),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 

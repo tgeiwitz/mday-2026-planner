@@ -113,7 +113,7 @@
 - [x] Zone-adjusted stops/route calc (equal-weighted across zones)
 - [x] Dashboard per-date PlanningPanel: 2026 Budget | 2025 Actual | Confirmed | Routes Needed | Drivers Needed | Status
 - [ ] Weight stops/route by per-zone task volume (deferred — needs zone_metrics volume columns)
-- [ ] Order Capacity column (deferred)
+- [x] Order Capacity columns shipped as Route Capacity + Confirmed Capacity on Daily Planning
 - [x] "Copy Merchant Update" blurb button per date (copies one-line status)
 - [x] Anchor Dashboard to today by default (Daily Planning panel)
 
@@ -126,3 +126,30 @@
 - [x] Dashboard PlanningPanel shows two gap columns: Room to Fill and Need Drivers
 - [x] Routes page: inline-editable stops per route with live recalc on blur (already existed)
 - [x] 9/9 vitest tests pass with new planning shape
+
+
+## v13 Timeblock Rebuild (drop Wave as first-class; simpler model)
+- [ ] Drop `wave` from Timeblock schema as a required column (keep optional `label` for rare multi-slot days)
+- [ ] Add to Timeblock: bookingType (Direct / Flex), merchant (LAF / BC / Both; Both when Flex), vehicleSize, pickupTime, pickupLocation, pickupZip
+- [ ] Add range fields on Timeblock: targetStopsMin/Max, targetDurationMin/Max, driverPayMin/Max
+- [ ] Add notes (text) on Timeblock for incentives/reminders
+- [ ] `Create Week` button on Timeblocks page that generates 7 default blocks for a chosen Monday
+- [ ] Inline editor for all new fields with sensible defaults
+- [ ] Route.merchantMix JSON ({LAF: n, BC: n}) for Flex-block routes; fee calc uses per-merchant rates on mix
+- [ ] Routes page: flag routes whose stops/duration/pay fall outside the block's target ranges
+- [ ] Dashboard/Daily Planning stays date-aligned; multi-block dates roll up by date
+- [ ] Data migration preserves existing routes (each existing timeblock keeps its wave as label, bookingType defaults to Direct)
+- [ ] Vitest for bookingType rules + merchantMix fee calc
+
+## v14 Driver Availability Form (public, token+PIN+expire)
+- [ ] New schema: availability_tokens (token, driverId, windowStart, windowEnd, pin, expiresAt, usedAt, revokedAt, createdAt)
+- [ ] New schema: driver_availability_submissions (id, tokenId, week1Signups JSON, week2Preferences JSON, generalNotes, perBlockNotes JSON, submittedAt, submittedIp)
+- [ ] New schema: driver_timeblock_assignments (driverId, timeblockId, status Scheduled|Standby|Pending, source, assignedAt)
+- [ ] Public route /availability/:token (no auth) with PIN gate when set
+- [ ] Form UI: Week+1 view-only + optional sign-up (Pending status) + Week+2 Available/Preferred checkboxes + per-block notes + general notes + "other times" free-text
+- [ ] Auto-expire: form blocks submission after expiresAt; shows friendly "window closed" screen
+- [ ] Optional 4-digit PIN with 5-attempt lockout per token
+- [ ] Drivers page: "Send Availability Form" button per driver → generates token, copies link + PIN to clipboard
+- [ ] New dispatch page: Availability Inbox (list submissions with prominent notes, one-click Scheduled/Standby assignment per block)
+- [ ] Timeblock page: show Scheduled / Standby / Available-unassigned driver rollups per block
+- [ ] Vitest for token expire, PIN lockout, submission persistence
