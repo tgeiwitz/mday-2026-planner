@@ -43,39 +43,39 @@
 }
 
 :root {
-  --primary: var(--color-blue-700);
-  --primary-foreground: var(--color-blue-50);
-  --sidebar-primary: var(--color-blue-600);
-  --sidebar-primary-foreground: var(--color-blue-50);
-  --chart-1: var(--color-blue-300);
-  --chart-2: var(--color-blue-500);
-  --chart-3: var(--color-blue-600);
-  --chart-4: var(--color-blue-700);
-  --chart-5: var(--color-blue-800);
-  --radius: 0.65rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.235 0.015 65);
+  --primary: oklch(0.32 0.07 25);
+  --primary-foreground: oklch(0.98 0.01 85);
+  --sidebar-primary: oklch(0.32 0.07 25);
+  --sidebar-primary-foreground: oklch(0.98 0.01 85);
+  --chart-1: oklch(0.55 0.12 25);
+  --chart-2: oklch(0.72 0.09 65);
+  --chart-3: oklch(0.45 0.05 230);
+  --chart-4: oklch(0.6 0.08 160);
+  --chart-5: oklch(0.4 0.1 280);
+  --radius: 0.625rem;
+  --background: oklch(0.985 0.003 85);
+  --foreground: oklch(0.2 0.015 270);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.235 0.015 65);
+  --card-foreground: oklch(0.2 0.015 270);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.235 0.015 65);
-  --secondary: oklch(0.98 0.001 286.375);
-  --secondary-foreground: oklch(0.4 0.015 65);
-  --muted: oklch(0.967 0.001 286.375);
-  --muted-foreground: oklch(0.552 0.016 285.938);
-  --accent: oklch(0.967 0.001 286.375);
-  --accent-foreground: oklch(0.141 0.005 285.823);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.92 0.004 286.32);
-  --input: oklch(0.92 0.004 286.32);
-  --ring: oklch(0.623 0.214 259.815);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.235 0.015 65);
-  --sidebar-accent: oklch(0.967 0.001 286.375);
-  --sidebar-accent-foreground: oklch(0.141 0.005 285.823);
-  --sidebar-border: oklch(0.92 0.004 286.32);
-  --sidebar-ring: oklch(0.623 0.214 259.815);
+  --popover-foreground: oklch(0.2 0.015 270);
+  --secondary: oklch(0.94 0.012 85);
+  --secondary-foreground: oklch(0.25 0.015 270);
+  --muted: oklch(0.95 0.005 85);
+  --muted-foreground: oklch(0.45 0.015 270);
+  --accent: oklch(0.94 0.012 85);
+  --accent-foreground: oklch(0.25 0.015 270);
+  --destructive: oklch(0.55 0.18 25);
+  --destructive-foreground: oklch(0.98 0 0);
+  --border: oklch(0.9 0.008 85);
+  --input: oklch(0.92 0.006 85);
+  --ring: oklch(0.32 0.07 25);
+  --sidebar: oklch(0.97 0.005 85);
+  --sidebar-foreground: oklch(0.2 0.015 270);
+  --sidebar-accent: oklch(0.93 0.01 85);
+  --sidebar-accent-foreground: oklch(0.25 0.015 270);
+  --sidebar-border: oklch(0.9 0.008 85);
+  --sidebar-ring: oklch(0.32 0.07 25);
 }
 
 .dark {
@@ -118,7 +118,12 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11", "ss01";
+  }
+  h1, h2, h3, h4, h5 {
+    font-family: 'Playfair Display', ui-serif, Georgia, serif;
+    letter-spacing: -0.01em;
   }
   button:not(:disabled),
   [role="button"]:not([aria-disabled="true"]),
@@ -173,5 +178,35 @@
       padding-right: 2rem;
       max-width: 1280px; /* Standard content width */
     }
+  }
+}
+@layer components {
+  .elegant-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .elegant-table thead th {
+    @apply text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground py-3 px-4 border-b border-border bg-muted/40 text-left whitespace-nowrap;
+  }
+  .elegant-table tbody td {
+    @apply py-3 px-4 border-b border-border/60 text-sm;
+  }
+  .elegant-table tbody tr:hover {
+    @apply bg-muted/40;
+  }
+  .elegant-table tbody tr:last-child td {
+    border-bottom: 0;
+  }
+  .num-cell {
+    @apply font-mono tabular-nums text-right;
+  }
+  .status-pill {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+  .page-title {
+    @apply font-serif text-3xl md:text-4xl tracking-tight text-foreground;
+  }
+  .page-subtitle {
+    @apply text-sm text-muted-foreground mt-1;
   }
 }

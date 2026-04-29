@@ -1,0 +1,50 @@
+{
+  "laf_2025_by_day": {
+    "2025-05-05": 27, "2025-05-06": 23, "2025-05-07": 30, "2025-05-08": 33,
+    "2025-05-09": 79, "2025-05-10": 105, "2025-05-11": 160, "2025-05-12": 63
+  },
+  "bc_2025_by_day": {
+    "2025-05-05": 4, "2025-05-06": 1, "2025-05-07": 4, "2025-05-08": 6,
+    "2025-05-09": 10, "2025-05-10": 9, "2025-05-11": 10, "2025-05-12": 3
+  },
+  "pickup_times_2025": {
+    "Monday": {"LAF": {"wave1": "06:30", "wave2": "08:00"}, "BC": {"wave1": "07:30", "wave2": "07:30"}},
+    "Tuesday": {"LAF": {"wave1": "05:36", "wave2": "07:00"}, "BC": {"wave1": "07:00", "wave2": "07:00"}},
+    "Wednesday": {"LAF": {"wave1": "05:20", "wave2": "08:00"}, "BC": {"wave1": "06:00", "wave2": "08:00"}},
+    "Thursday": {"LAF": {"wave1": "07:30", "wave2": "08:00"}, "BC": {"wave1": "04:51", "wave2": "08:00"}},
+    "Friday": {"LAF": {"wave1": "04:00", "wave2": "08:00"}, "BC": {"wave1": "04:00", "wave2": "08:00"}},
+    "Saturday": {"LAF": {"wave1": "04:00", "wave2": "08:00"}, "BC": {"wave1": "04:00", "wave2": "13:00"}},
+    "Sunday": {"LAF": {"wave1": "04:00", "wave2": "10:00"}, "BC": {"wave1": "04:00", "wave2": "08:00"}}
+  },
+  "zone_metrics_2025": {
+    "602": {"travel_time": 102.71, "distance": 4, "laf_fee": 10.01, "bc_fee": 10.01},
+    "603": {"travel_time": 163.47, "distance": 3, "laf_fee": 10.01, "bc_fee": 10.01},
+    "604": {"travel_time": 188.33, "distance": 5, "laf_fee": 10.01, "bc_fee": 10.01},
+    "605": {"travel_time": 171.80, "distance": 1, "laf_fee": 10.01, "bc_fee": 10.01},
+    "606": {"travel_time": 241.00, "distance": 4, "laf_fee": 10.01, "bc_fee": 10.01},
+    "607": {"travel_time": 174.86, "distance": 3, "laf_fee": 10.29, "bc_fee": 10.01},
+    "608": {"travel_time": 78.50, "distance": 10, "laf_fee": 10.01, "bc_fee": 10.01},
+    "609": {"travel_time": 106.50, "distance": 9, "laf_fee": 25.54, "bc_fee": 10.01},
+    "610": {"travel_time": 95.50, "distance": 14, "laf_fee": 34.02, "bc_fee": 10.01},
+    "611": {"travel_time": 220.86, "distance": 22, "laf_fee": 10.01, "bc_fee": 10.01},
+    "612": {"travel_time": 76.80, "distance": 16, "laf_fee": 10.01, "bc_fee": 10.01},
+    "613": {"travel_time": 156.34, "distance": 2, "laf_fee": 10.01, "bc_fee": 31.25},
+    "614": {"travel_time": 135.85, "distance": 1, "laf_fee": 12.01, "bc_fee": 12.51},
+    "615": {"travel_time": 186.67, "distance": 1, "laf_fee": 10.01, "bc_fee": 10.01},
+    "616": {"travel_time": 260.00, "distance": 2, "laf_fee": 10.01, "bc_fee": 10.01},
+    "659": {"travel_time": 178.61, "distance": 1, "laf_fee": 10.01, "bc_fee": 10.01},
+    "660": {"travel_time": 116.00, "distance": 4, "laf_fee": 20.49, "bc_fee": 10.01},
+    "661": {"travel_time": 198.12, "distance": 2, "laf_fee": 10.01, "bc_fee": 10.01},
+    "662": {"travel_time": 157.45, "distance": 1, "laf_fee": 10.01, "bc_fee": 10.01},
+    "770": {"travel_time": 128.39, "distance": 4, "laf_fee": 12.40, "bc_fee": 10.01},
+    "771": {"travel_time": 146.96, "distance": 4, "laf_fee": 10.01, "bc_fee": 10.01},
+    "776": {"travel_time": 155.90, "distance": 2, "laf_fee": 10.01, "bc_fee": 10.01},
+    "777": {"travel_time": 146.55, "distance": 14, "laf_fee": 28.68, "bc_fee": 10.01},
+    "778": {"travel_time": 189.43, "distance": 11, "laf_fee": 10.01, "bc_fee": 10.01},
+    "779": {"travel_time": 95.40, "distance": 7, "laf_fee": 10.01, "bc_fee": 22.32},
+    "780": {"travel_time": 217.00, "distance": 6, "laf_fee": 10.01, "bc_fee": 10.01},
+    "781": {"travel_time": 173.33, "distance": 10, "laf_fee": 27.95, "bc_fee": 10.01}
+  },
+  "sixty_day_avg_laf": 17,
+  "sixty_day_avg_bc": 4
+}
