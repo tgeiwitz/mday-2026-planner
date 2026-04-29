@@ -81,3 +81,11 @@
 - [x] Dashboard columns: Date(2026), Day, Phase, LAF 2025 Actual, BC 2025 Actual, Total 2025, LAF 2026 Goal, BC 2026 Estimate, Total 2026 Goal, Max LAF, Max BC
 - [x] Inline edit LAF 2026 Goal and BC 2026 Estimate
 - [x] Zone editor UI on Routes page with auto-recalc of duration/mileage/fee
+
+## v8 Dashboard progress metrics
+- [ ] Fix inline-edit display bug: goal inputs show seeded values, not 0
+- [ ] % Orders Received vs Goal (by day and overall)
+- [ ] % Orders Received vs Latest Reforecast (by day and overall)
+- [ ] % Orders vs Max Capacity (by day and overall)
+- [ ] % Routes Planned vs Capacity
+- [ ] % Routes Assigned vs Latest Reforecast

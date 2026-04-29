@@ -17,9 +17,25 @@ type ForecastRow = {
   bc2026Goal: number;
   lafConfirmed: number | null;
   bcConfirmed: number | null;
+  reforecastLafGoal?: number | null;
+  reforecastBcGoal?: number | null;
   maxLafCapacity: number;
   maxBcCapacity: number;
 };
+
+type Timeblock = { id: number; blockDate: string | Date };
+type Route = { id: number; timeblockId: number; status: string; driverId: number | null };
+
+function toDateKey(d: string | Date): string {
+  const dt = typeof d === "string" ? new Date(d) : d;
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
+}
+
+function pctBadge(pct: number | null) {
+  if (pct === null) return <span className="text-muted-foreground">—</span>;
+  const cls = pct >= 100 ? "text-destructive" : pct >= 85 ? "text-amber-600" : pct >= 50 ? "text-emerald-600" : "text-muted-foreground";
+  return <span className={`tabular-nums ${cls}`}>{pct.toFixed(0)}%</span>;
+}
 
 function formatDate(date: string | Date) {
   const d = typeof date === "string" ? new Date(date) : date;
@@ -35,11 +51,10 @@ function dayName(date: string | Date) {
   return d.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" });
 }
 
-function phaseColor(phase: string) {
-  if (phase === "Mother's Day") return "bg-primary text-primary-foreground";
-  if (phase === "Peak") return "bg-amber-100 text-amber-900 border border-amber-200";
-  if (phase === "Holiday Week") return "bg-rose-50 text-rose-900 border border-rose-200";
-  return "bg-muted text-muted-foreground border border-border";
+function deriveSop(lafGoal: number): { label: string; cls: string } {
+  if (lafGoal >= 100) return { label: "Exception", cls: "bg-primary text-primary-foreground" };
+  if (lafGoal >= 30) return { label: "High Volume", cls: "bg-amber-100 text-amber-900 border border-amber-200" };
+  return { label: "Standard", cls: "bg-muted text-muted-foreground border border-border" };
 }
 
 function statusIndicator(current: number, max: number) {
@@ -56,6 +71,24 @@ type GoalDraft = { laf: string; bc: string };
 export default function Home() {
   const { data: forecast = [], isLoading, refetch } = trpc.forecast.list.useQuery();
   const { data: routes = [] } = trpc.routes.list.useQuery();
+  const { data: timeblocks = [] } = trpc.timeblocks.list.useQuery();
+
+  // Build routes-per-date stats
+  const routeStatsByDate = useMemo(() => {
+    const tbDate = new Map<number, string>();
+    for (const tb of timeblocks as Timeblock[]) tbDate.set(tb.id, toDateKey(tb.blockDate));
+    const map = new Map<string, { total: number; planned: number; assigned: number }>();
+    for (const r of routes as Route[]) {
+      const dk = tbDate.get(r.timeblockId);
+      if (!dk) continue;
+      if (!map.has(dk)) map.set(dk, { total: 0, planned: 0, assigned: 0 });
+      const s = map.get(dk)!;
+      s.total++;
+      if (["Planned", "Confirmed", "Processed", "Routed", "Completed"].includes(r.status)) s.planned++;
+      if (r.driverId) s.assigned++;
+    }
+    return map;
+  }, [routes, timeblocks]);
   const update = trpc.forecast.update.useMutation({ onSuccess: () => refetch() });
 
   const [drafts, setDrafts] = useState<Record<number, GoalDraft>>({});
@@ -162,7 +195,7 @@ export default function Home() {
           <div className="px-6 py-4 border-b border-border/60 bg-muted/20">
             <h2 className="font-serif text-xl">Daily Forecast</h2>
             <p className="text-xs text-muted-foreground mt-1">
-              Date · Day · Phase · 2025 actuals · 2026 goals (editable) · Max capacity
+              Date · Day · SOP · 2025 actuals · 2026 goals (editable) · Max capacity. SOP auto-derived: under 30 Standard, 30-99 High Volume, 100+ Exception.
             </p>
           </div>
           <div className="overflow-x-auto">
@@ -171,7 +204,7 @@ export default function Home() {
                 <tr>
                   <th>Date (2026)</th>
                   <th>Day</th>
-                  <th>Phase</th>
+                  <th>SOP</th>
                   <th className="text-right">LAF 2025 Actual</th>
                   <th className="text-right">BC 2025 Actual</th>
                   <th className="text-right border-r border-border/60">Total 2025</th>
@@ -179,14 +212,19 @@ export default function Home() {
                   <th className="text-right">BC 2026 (Estimate)</th>
                   <th className="text-right border-r border-border/60">Total 2026 Goal</th>
                   <th className="text-right">Max LAF</th>
-                  <th className="text-right">Max BC</th>
+                  <th className="text-right border-r border-border/60">Max BC</th>
+                  <th className="text-right" title="Confirmed orders / 2026 Goal">% Conf vs Goal</th>
+                  <th className="text-right" title="Confirmed orders / Reforecast (or Goal)">% Conf vs Reforecast</th>
+                  <th className="text-right" title="Confirmed orders / Max Capacity">% of Max Cap</th>
+                  <th className="text-right" title="Routes in Planned+ status / total routes for the day">% Routes Planned</th>
+                  <th className="text-right border-r border-border/60" title="Routes with driver assigned / total routes">% Routes Assigned</th>
                   <th>Status</th>
                 </tr>
               </thead>
               <tbody>
                 {isLoading && (
                   <tr>
-                    <td colSpan={12} className="text-center text-muted-foreground py-8">Loading…</td>
+                    <td colSpan={17} className="text-center text-muted-foreground py-8">Loading…</td>
                   </tr>
                 )}
                 {(forecast as ForecastRow[]).map((f) => {
@@ -198,12 +236,24 @@ export default function Home() {
                   const totalGoal = (f.laf2026Goal || 0) + (f.bc2026Goal || 0);
                   const totalCap = (f.maxLafCapacity || 0) + (f.maxBcCapacity || 0);
                   const status = statusIndicator(totalGoal, totalCap);
+                  const dKey = toDateKey(f.forecastDate);
+                  const totalConfirmed = (f.lafConfirmed || 0) + (f.bcConfirmed || 0);
+                  const reforecast = (f.reforecastLafGoal ?? f.laf2026Goal ?? 0) + (f.reforecastBcGoal ?? f.bc2026Goal ?? 0);
+                  const pctVsGoal = totalGoal > 0 ? (totalConfirmed / totalGoal) * 100 : null;
+                  const pctVsReforecast = reforecast > 0 ? (totalConfirmed / reforecast) * 100 : null;
+                  const pctVsMax = totalCap > 0 ? (totalConfirmed / totalCap) * 100 : null;
+                  const stats = routeStatsByDate.get(dKey) ?? { total: 0, planned: 0, assigned: 0 };
+                  const pctRoutesPlanned = stats.total > 0 ? (stats.planned / stats.total) * 100 : null;
+                  const pctRoutesAssigned = stats.total > 0 ? (stats.assigned / stats.total) * 100 : null;
                   return (
                     <tr key={f.id}>
                       <td className="whitespace-nowrap font-medium">{formatDate(f.forecastDate)}</td>
                       <td className="text-muted-foreground">{dayName(f.forecastDate)}</td>
                       <td>
-                        <Badge className={`${phaseColor(f.phase)} font-normal`}>{f.phase}</Badge>
+                        {(() => {
+                          const sop = deriveSop(f.laf2026Goal || 0);
+                          return <Badge className={`${sop.cls} font-normal`}>{sop.label}</Badge>;
+                        })()}
                       </td>
                       <td className="num-cell">{f.laf2025Actual || "—"}</td>
                       <td className="num-cell">{f.bc2025Actual || "—"}</td>
@@ -250,7 +300,12 @@ export default function Home() {
                         {totalGoal}
                       </td>
                       <td className="num-cell text-muted-foreground">{f.maxLafCapacity}</td>
-                      <td className="num-cell text-muted-foreground">{f.maxBcCapacity}</td>
+                      <td className="num-cell text-muted-foreground border-r border-border/60">{f.maxBcCapacity}</td>
+                      <td className="num-cell">{pctBadge(pctVsGoal)}</td>
+                      <td className="num-cell">{pctBadge(pctVsReforecast)}</td>
+                      <td className="num-cell">{pctBadge(pctVsMax)}</td>
+                      <td className="num-cell">{pctBadge(pctRoutesPlanned)}</td>
+                      <td className="num-cell border-r border-border/60">{pctBadge(pctRoutesAssigned)}</td>
                       <td>
                         {status && (
                           <span className={`inline-flex items-center gap-1.5 text-xs ${status.cls}`}>
@@ -279,9 +334,10 @@ export default function Home() {
                   <td className="num-cell font-medium">
                     {forecast.reduce((s, f) => s + (f.maxLafCapacity || 0), 0).toLocaleString()}
                   </td>
-                  <td className="num-cell font-medium">
+                  <td className="num-cell font-medium border-r border-border/60">
                     {forecast.reduce((s, f) => s + (f.maxBcCapacity || 0), 0).toLocaleString()}
                   </td>
+                  <td colSpan={5} />
                   <td />
                 </tr>
               </tfoot>
