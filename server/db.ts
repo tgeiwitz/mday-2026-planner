@@ -931,3 +931,74 @@ export async function getPlanningView() {
     };
   });
 }
+
+
+// Zone distribution: for a date range, per-zone and per-merchant task counts + avg fee + % of total.
+// Sources: zone_task_history_2025 for 2025 dates; wodely_task_cache for 2026 dates (by completed order).
+import { zoneTaskHistory2025 } from "../drizzle/schema";
+import { sql as _sql } from "drizzle-orm";
+
+export async function getZoneDistribution(startIso: string, endIso: string) {
+  const db = await getDb();
+  const emptyResult = { rows: [] as { zoneId: number; zoneName: string; lafCount: number; bcCount: number; lafPct: number; bcPct: number; lafAvgFee: number; bcAvgFee: number }[], totals: { laf: 0, bc: 0 } };
+  if (!db) return emptyResult;
+  const startYear = Number(startIso.slice(0, 4));
+  const endYear = Number(endIso.slice(0, 4));
+  const zones = await db.select().from(zoneMetrics);
+  const zoneMap = new Map(zones.map((z) => [z.zoneId, z]));
+  // Accumulate by zoneId
+  const acc = new Map<number, { lafC: number; bcC: number; lafFeeSum: number; bcFeeSum: number; lafFeeN: number; bcFeeN: number }>();
+  function bump(zoneId: number, merchant: "LAF" | "BC", count: number, feeAvg: number) {
+    let a = acc.get(zoneId);
+    if (!a) { a = { lafC: 0, bcC: 0, lafFeeSum: 0, bcFeeSum: 0, lafFeeN: 0, bcFeeN: 0 }; acc.set(zoneId, a); }
+    if (merchant === "LAF") { a.lafC += count; if (feeAvg > 0) { a.lafFeeSum += feeAvg * count; a.lafFeeN += count; } }
+    else { a.bcC += count; if (feeAvg > 0) { a.bcFeeSum += feeAvg * count; a.bcFeeN += count; } }
+  }
+  if (startYear <= 2025 && endYear >= 2025) {
+    const s = startYear <= 2025 ? startIso : "2025-01-01";
+    const e = endYear >= 2025 ? endIso : "2025-12-31";
+    const rows = await db.select().from(zoneTaskHistory2025)
+      .where(_sql`${zoneTaskHistory2025.taskDate} >= ${s} AND ${zoneTaskHistory2025.taskDate} <= ${e}`);
+    for (const r of rows) bump(r.zoneId, r.merchant as "LAF" | "BC", r.taskCount, Number(r.avgFee));
+  }
+  if (endYear >= 2026) {
+    const s = startYear >= 2026 ? startIso : "2026-01-01";
+    const e = endIso;
+    const rows = await db.select().from(wodelyTaskCache)
+      .where(_sql`${wodelyTaskCache.deliveryDate} >= ${s} AND ${wodelyTaskCache.deliveryDate} <= ${e}`);
+    const grouped = new Map<string, { c: number; feeSum: number }>();
+    for (const r of rows) {
+      if (!r.zoneId) continue;
+      const key = `${r.zoneId}|${r.merchant}`;
+      let g = grouped.get(key);
+      if (!g) { g = { c: 0, feeSum: 0 }; grouped.set(key, g); }
+      g.c += 1;
+      g.feeSum += Number(r.taskFee || 0);
+    }
+    grouped.forEach((g, key) => {
+      const [zoneId, merchant] = key.split("|");
+      bump(Number(zoneId), merchant as "LAF" | "BC", g.c, g.c > 0 ? g.feeSum / g.c : 0);
+    });
+  }
+  let lafTotal = 0, bcTotal = 0;
+  acc.forEach((a) => { lafTotal += a.lafC; bcTotal += a.bcC; });
+  const out: {
+    zoneId: number; zoneName: string; lafCount: number; bcCount: number;
+    lafPct: number; bcPct: number; lafAvgFee: number; bcAvgFee: number;
+  }[] = [];
+  acc.forEach((a, zoneId) => {
+    const z = zoneMap.get(zoneId);
+    out.push({
+      zoneId,
+      zoneName: z?.zoneName || `Zone ${zoneId}`,
+      lafCount: a.lafC,
+      bcCount: a.bcC,
+      lafPct: lafTotal > 0 ? Math.round((a.lafC / lafTotal) * 1000) / 10 : 0,
+      bcPct: bcTotal > 0 ? Math.round((a.bcC / bcTotal) * 1000) / 10 : 0,
+      lafAvgFee: a.lafFeeN > 0 ? Math.round((a.lafFeeSum / a.lafFeeN) * 100) / 100 : 0,
+      bcAvgFee: a.bcFeeN > 0 ? Math.round((a.bcFeeSum / a.bcFeeN) * 100) / 100 : 0,
+    });
+  });
+  out.sort((a, b) => (b.lafCount + b.bcCount) - (a.lafCount + a.bcCount));
+  return { rows: out, totals: { laf: lafTotal, bc: bcTotal } };
+}

@@ -267,3 +267,14 @@ export const wodelyTaskCache = mysqlTable("wodely_task_cache", {
 export type WodelyTaskCache = typeof wodelyTaskCache.$inferSelect;
 export type InsertWodelyTaskCache = typeof wodelyTaskCache.$inferInsert;
 
+
+// Per-zone per-date per-merchant task counts seeded from 2025 Supabase data.
+// Used by the Zone Distribution Range A vs Range B comparison panel.
+export const zoneTaskHistory2025 = mysqlTable("zone_task_history_2025", {
+  id: int("id").autoincrement().primaryKey(),
+  taskDate: date("taskDate").notNull(),
+  merchant: mysqlEnum("merchant", ["LAF", "BC"]).notNull(),
+  zoneId: int("zoneId").notNull(),
+  taskCount: int("taskCount").notNull().default(0),
+  avgFee: decimal("avgFee", { precision: 10, scale: 2 }).notNull().default("0"),
+});

@@ -30,6 +30,7 @@
 
 ## Testing
 - [x] Vitest for planner endpoints (7 tests passing)
+- [x] Vitest for zones.distribution (3 tests: shape, totals equal row sums, pcts sum ~100)
 - [x] Verify seed data includes full Apr 29 - May 18 range
 
 ## v2 Enhancements (complete)
@@ -104,7 +105,7 @@
 - [x] Audit all fmtDate / formatDate calls for consistent UTC parsing
 - [x] Zone Metrics: travel time stored/shown in min/task; route duration calc matches
 - [x] Zone Metrics: show zone name (with code) in first column
-- [ ] Zone Metrics: Zone Distribution panel — Range A vs Range B custom date pickers, default next 7 days, LAF/BC separate columns, %-of-total per zone, Δ columns
+- [x] Zone Metrics: Zone Distribution panel — Range A vs Range B custom date pickers, default next 7 days, LAF/BC separate columns, %-of-total per zone, Δ columns
 - [x] Dashboard Daily Planning, Routes, and Scenarios pages all anchor to today with "Show earlier dates" toggle
 
 ## v11 Daily Planning View (founder status + merchant update)

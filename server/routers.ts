@@ -63,6 +63,15 @@ export const appRouter = router({
         await db.updateZoneMetric(id, update);
         return { success: true };
       }),
+    distribution: publicProcedure
+      .input(z.object({ startA: z.string(), endA: z.string(), startB: z.string(), endB: z.string() }))
+      .query(async ({ input }) => {
+        const [a, b] = await Promise.all([
+          db.getZoneDistribution(input.startA, input.endA),
+          db.getZoneDistribution(input.startB, input.endB),
+        ]);
+        return { rangeA: a, rangeB: b };
+      }),
   }),
 
   drivers: router({

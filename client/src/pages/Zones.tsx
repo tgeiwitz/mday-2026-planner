@@ -1,7 +1,8 @@
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { trpc } from "@/lib/trpc";
-import { useState, useEffect } from "react";
+import { addDays, todayNY } from "@/lib/date";
+import { useState, useEffect, useMemo } from "react";
 import { toast } from "sonner";
 
 export default function Zones() {
@@ -32,6 +33,44 @@ export default function Zones() {
     updateZone.mutate({ id, [field]: value } as any);
   };
 
+  // ---------- Zone Distribution comparison ----------
+  const [today] = useState(() => todayNY());
+  const [startA, setStartA] = useState(() => today);
+  const [endA, setEndA] = useState(() => addDays(today, 6));
+  const [startB, setStartB] = useState(() => today);
+  const [endB, setEndB] = useState(() => addDays(today, 6));
+
+  const distQuery = trpc.zones.distribution.useQuery({ startA, endA, startB, endB });
+
+  type DRow = {
+    zoneId: number; zoneName: string;
+    lafCount: number; bcCount: number;
+    lafPct: number; bcPct: number;
+    lafAvgFee: number; bcAvgFee: number;
+  };
+
+  const merged = useMemo(() => {
+    const a = (distQuery.data?.rangeA.rows ?? []) as DRow[];
+    const b = (distQuery.data?.rangeB.rows ?? []) as DRow[];
+    const byZone = new Map<number, { zoneName: string; a?: DRow; b?: DRow }>();
+    for (const r of a) byZone.set(r.zoneId, { zoneName: r.zoneName, a: r });
+    for (const r of b) {
+      const ex = byZone.get(r.zoneId);
+      if (ex) ex.b = r;
+      else byZone.set(r.zoneId, { zoneName: r.zoneName, b: r });
+    }
+    const rows = Array.from(byZone.entries()).map(([zoneId, v]) => ({ zoneId, ...v }));
+    rows.sort((x, y) => {
+      const xT = (x.a?.lafCount ?? 0) + (x.a?.bcCount ?? 0) + (x.b?.lafCount ?? 0) + (x.b?.bcCount ?? 0);
+      const yT = (y.a?.lafCount ?? 0) + (y.a?.bcCount ?? 0) + (y.b?.lafCount ?? 0) + (y.b?.bcCount ?? 0);
+      return yT - xT;
+    });
+    return rows;
+  }, [distQuery.data]);
+
+  const totalsA = distQuery.data?.rangeA.totals ?? { laf: 0, bc: 0 };
+  const totalsB = distQuery.data?.rangeB.totals ?? { laf: 0, bc: 0 };
+
   return (
     <div className="min-h-screen bg-background">
       <div className="border-b border-border bg-gradient-to-b from-muted/30 to-transparent">
@@ -47,7 +86,7 @@ export default function Zones() {
         </div>
       </div>
 
-      <div className="container py-8">
+      <div className="container py-8 space-y-8">
         <Card className="border-border/60 overflow-hidden">
           <div className="table-scroll">
             <table className="elegant-table">
@@ -135,6 +174,148 @@ export default function Zones() {
                   );
                 })}
               </tbody>
+            </table>
+          </div>
+        </Card>
+
+        {/* Zone Distribution: Range A vs Range B */}
+        <Card className="border-border/60 overflow-hidden">
+          <div className="px-5 pt-5 pb-4 border-b border-border/60">
+            <div className="flex flex-col gap-1">
+              <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground font-medium">
+                Demand Distribution
+              </span>
+              <h2 className="text-lg font-semibold">Zone Distribution — Range A vs Range B</h2>
+              <p className="text-sm text-muted-foreground max-w-3xl">
+                Compare two date windows to see where LAF and BC demand is concentrating by zone.
+                Uses 2025 history for dates in 2025 and confirmed Wodely tasks for dates in 2026.
+                Defaults to today through today + 6 for both ranges — adjust to compare last year
+                to this year, week-over-week, or any two windows.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+              <div className="space-y-2">
+                <div className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Range A</div>
+                <div className="flex items-center gap-2">
+                  <Input type="date" value={startA} onChange={(e) => setStartA(e.target.value)} className="h-9 text-sm" />
+                  <span className="text-muted-foreground text-xs">to</span>
+                  <Input type="date" value={endA} onChange={(e) => setEndA(e.target.value)} className="h-9 text-sm" />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <div className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Range B</div>
+                <div className="flex items-center gap-2">
+                  <Input type="date" value={startB} onChange={(e) => setStartB(e.target.value)} className="h-9 text-sm" />
+                  <span className="text-muted-foreground text-xs">to</span>
+                  <Input type="date" value={endB} onChange={(e) => setEndB(e.target.value)} className="h-9 text-sm" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="table-scroll">
+            <table className="elegant-table">
+              <thead>
+                <tr>
+                  <th rowSpan={2} className="align-bottom sticky-col">Zone</th>
+                  <th colSpan={3} className="text-center border-r border-border/60 bg-muted/30">Range A · LAF</th>
+                  <th colSpan={3} className="text-center border-r border-border/60 bg-muted/30">Range A · BC</th>
+                  <th colSpan={3} className="text-center border-r border-border/60 bg-primary/5">Range B · LAF</th>
+                  <th colSpan={3} className="text-center border-r border-border/60 bg-primary/5">Range B · BC</th>
+                  <th colSpan={2} className="text-center">Δ Share</th>
+                </tr>
+                <tr>
+                  <th className="!py-2 text-[10px] bg-muted/30">Count</th>
+                  <th className="!py-2 text-[10px] bg-muted/30">%</th>
+                  <th className="!py-2 text-[10px] border-r border-border/60 bg-muted/30">Avg Fee</th>
+                  <th className="!py-2 text-[10px] bg-muted/30">Count</th>
+                  <th className="!py-2 text-[10px] bg-muted/30">%</th>
+                  <th className="!py-2 text-[10px] border-r border-border/60 bg-muted/30">Avg Fee</th>
+                  <th className="!py-2 text-[10px] bg-primary/5">Count</th>
+                  <th className="!py-2 text-[10px] bg-primary/5">%</th>
+                  <th className="!py-2 text-[10px] border-r border-border/60 bg-primary/5">Avg Fee</th>
+                  <th className="!py-2 text-[10px] bg-primary/5">Count</th>
+                  <th className="!py-2 text-[10px] bg-primary/5">%</th>
+                  <th className="!py-2 text-[10px] border-r border-border/60 bg-primary/5">Avg Fee</th>
+                  <th className="!py-2 text-[10px]">LAF</th>
+                  <th className="!py-2 text-[10px]">BC</th>
+                </tr>
+              </thead>
+              <tbody>
+                {distQuery.isLoading && (
+                  <tr><td colSpan={15} className="text-center text-muted-foreground py-6">Loading…</td></tr>
+                )}
+                {!distQuery.isLoading && distQuery.isError && (
+                  <tr><td colSpan={15} className="text-center text-rose-600 py-6">
+                    Failed to load distribution — {distQuery.error?.message ?? "unknown error"}.
+                    <button
+                      onClick={() => distQuery.refetch()}
+                      className="ml-2 underline text-rose-700 hover:text-rose-800"
+                    >Retry</button>
+                  </td></tr>
+                )}
+                {!distQuery.isLoading && !distQuery.isError && merged.length === 0 && (
+                  <tr><td colSpan={15} className="text-center text-muted-foreground py-6">No data in either range.</td></tr>
+                )}
+                {merged.map((row) => {
+                  const a = row.a;
+                  const b = row.b;
+                  const deltaLaf = (b?.lafPct ?? 0) - (a?.lafPct ?? 0);
+                  const deltaBc = (b?.bcPct ?? 0) - (a?.bcPct ?? 0);
+                  const fmtPct = (n: number) => `${n.toFixed(1)}%`;
+                  const fmtFee = (n: number) => n > 0 ? `$${n.toFixed(2)}` : "—";
+                  const fmtDelta = (n: number) => {
+                    if (Math.abs(n) < 0.05) return "—";
+                    const sign = n > 0 ? "+" : "";
+                    return `${sign}${n.toFixed(1)}`;
+                  };
+                  const deltaClass = (n: number) =>
+                    Math.abs(n) < 0.05 ? "text-muted-foreground" : n > 0 ? "text-emerald-600" : "text-rose-600";
+                  return (
+                    <tr key={row.zoneId}>
+                      <td className="sticky-col min-w-[160px]">
+                        <div className="font-medium text-sm leading-tight">{row.zoneName}</div>
+                        <div className="text-[10px] text-muted-foreground font-mono">#{row.zoneId}</div>
+                      </td>
+                      <td className="num-cell bg-muted/10">{a?.lafCount ?? 0}</td>
+                      <td className="num-cell bg-muted/10">{fmtPct(a?.lafPct ?? 0)}</td>
+                      <td className="num-cell border-r border-border/60 bg-muted/10">{fmtFee(a?.lafAvgFee ?? 0)}</td>
+                      <td className="num-cell bg-muted/10">{a?.bcCount ?? 0}</td>
+                      <td className="num-cell bg-muted/10">{fmtPct(a?.bcPct ?? 0)}</td>
+                      <td className="num-cell border-r border-border/60 bg-muted/10">{fmtFee(a?.bcAvgFee ?? 0)}</td>
+                      <td className="num-cell bg-primary/5">{b?.lafCount ?? 0}</td>
+                      <td className="num-cell bg-primary/5">{fmtPct(b?.lafPct ?? 0)}</td>
+                      <td className="num-cell border-r border-border/60 bg-primary/5">{fmtFee(b?.lafAvgFee ?? 0)}</td>
+                      <td className="num-cell bg-primary/5">{b?.bcCount ?? 0}</td>
+                      <td className="num-cell bg-primary/5">{fmtPct(b?.bcPct ?? 0)}</td>
+                      <td className="num-cell border-r border-border/60 bg-primary/5">{fmtFee(b?.bcAvgFee ?? 0)}</td>
+                      <td className={`num-cell font-medium ${deltaClass(deltaLaf)}`}>{fmtDelta(deltaLaf)}</td>
+                      <td className={`num-cell font-medium ${deltaClass(deltaBc)}`}>{fmtDelta(deltaBc)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              {merged.length > 0 && (
+                <tfoot>
+                  <tr className="font-semibold bg-muted/40">
+                    <td className="sticky-col">Totals</td>
+                    <td className="num-cell">{totalsA.laf}</td>
+                    <td className="num-cell">100.0%</td>
+                    <td className="num-cell border-r border-border/60">—</td>
+                    <td className="num-cell">{totalsA.bc}</td>
+                    <td className="num-cell">100.0%</td>
+                    <td className="num-cell border-r border-border/60">—</td>
+                    <td className="num-cell">{totalsB.laf}</td>
+                    <td className="num-cell">100.0%</td>
+                    <td className="num-cell border-r border-border/60">—</td>
+                    <td className="num-cell">{totalsB.bc}</td>
+                    <td className="num-cell">100.0%</td>
+                    <td className="num-cell border-r border-border/60">—</td>
+                    <td className="num-cell">—</td>
+                    <td className="num-cell">—</td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
         </Card>
