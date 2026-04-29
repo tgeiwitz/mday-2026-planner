@@ -27,15 +27,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 const STATUSES = ["Budgeted", "Planned", "Confirmed", "Processed", "Routed", "Completed"];
 
-function fmtDate(d: string | Date) {
-  const dt = typeof d === "string" ? new Date(d) : d;
-  return dt.toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  });
-}
+import { fmtDate, toISODate } from "@/lib/date";
 
 export default function Routes() {
   const { data: routes = [], refetch } = trpc.routes.list.useQuery();
@@ -103,7 +95,7 @@ export default function Routes() {
   for (const r of filtered) {
     const tb = tbMap.get(r.timeblockId);
     if (!tb) continue;
-    const key = String(tb.blockDate).slice(0, 10);
+    const key = toISODate(tb.blockDate);
     if (!grouped.has(key)) grouped.set(key, []);
     grouped.get(key)!.push(r);
   }

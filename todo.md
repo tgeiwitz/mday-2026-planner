@@ -99,3 +99,21 @@
 - [x] Inputs sized for finger taps (>=40px tall on mobile)
 - [x] Page headers and filters stack vertically on mobile (Scenarios uses flex-wrap; sub-nav already responsive)
 - [x] Test on common breakpoints: 360px (phone), 768px (tablet), 1024px+ (desktop)
+
+## v10 Bug fixes
+- [x] Routes page shows wrong dates — timezone drift fixed via shared UTC-safe lib/date.ts
+- [x] Audit all fmtDate / formatDate calls for consistent UTC parsing
+- [x] Zone Metrics: travel time stored/shown in min/task; route duration calc matches
+- [x] Zone Metrics: show zone name (with code) in first column
+- [ ] Zone Metrics: Zone Distribution panel — Range A vs Range B custom date pickers, default next 7 days, LAF/BC separate columns, %-of-total per zone, Δ columns
+- [ ] Dashboard / Scenarios / Routes default view anchors to today (past days hidden by default with toggle)
+
+## v11 Daily Planning View (founder status + merchant update)
+- [x] Pull 2025 daily task totals per merchant from Supabase into local `historical_daily_2025` table
+- [x] Map each 2026 date to 2025 equivalent by days-before-Mother's-Day (2025 MD = May 11; 2026 MD = May 10)
+- [x] Zone-adjusted stops/route calc (equal-weighted across zones)
+- [x] Dashboard per-date PlanningPanel: 2026 Budget | 2025 Actual | Confirmed | Routes Needed | Drivers Needed | Status
+- [ ] Weight stops/route by per-zone task volume (deferred — needs zone_metrics volume columns)
+- [ ] Order Capacity column (deferred)
+- [ ] "Copy Merchant Update" blurb button (deferred)
+- [ ] Anchor Dashboard to today by default (deferred)

@@ -54,10 +54,10 @@ export default function Zones() {
               <thead>
                 <tr>
                   <th rowSpan={2} className="align-bottom sticky-col">Zone</th>
-                  <th colSpan={3} className="text-center border-r border-border/60">Travel Time (sec/task)</th>
+                  <th colSpan={3} className="text-center border-r border-border/60">Travel Time (min/task)</th>
                   <th colSpan={3} className="text-center border-r border-border/60">Distance (mi/stop)</th>
-                  <th colSpan={3} className="text-center border-r border-border/60">LAF Task Fee</th>
-                  <th colSpan={3} className="text-center">BC Task Fee</th>
+                  <th colSpan={3} className="text-center border-r border-border/60">LAF Avg Fee</th>
+                  <th colSpan={3} className="text-center">BC Avg Fee</th>
                 </tr>
                 <tr>
                   <th className="!py-2 text-[10px]">Last Year</th>
@@ -79,9 +79,12 @@ export default function Zones() {
                   const e = edits[z.id] || {};
                   return (
                     <tr key={z.id}>
-                      <td className="font-medium font-mono sticky-col">{z.zoneId}</td>
-                      <td className="num-cell text-muted-foreground">{Number(z.travelTimeLastYear).toFixed(1)}</td>
-                      <td className="num-cell text-muted-foreground">{Number(z.travelTime60Day).toFixed(1)}</td>
+                      <td className="sticky-col min-w-[180px]">
+                        <div className="font-medium leading-tight text-sm">{z.zoneName ?? "—"}</div>
+                        <div className="text-[10px] text-muted-foreground font-mono">#{z.zoneId}</div>
+                      </td>
+                      <td className="num-cell text-muted-foreground">{Number(z.travelTimeLastYear).toFixed(2)}</td>
+                      <td className="num-cell text-muted-foreground">{Number(z.travelTime60Day).toFixed(2)}</td>
                       <td className="!py-1 !px-2 border-r border-border/60 bg-primary/5">
                         <Input
                           className="h-8 text-xs font-mono text-right border-transparent bg-transparent hover:border-border focus:border-ring"

@@ -14,15 +14,7 @@ import { Sunrise, Sun, Plus, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
-function fmtDate(d: string | Date) {
-  const dt = typeof d === "string" ? new Date(d) : d;
-  return dt.toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  });
-}
+import { fmtDate, toISODate } from "@/lib/date";
 
 export default function Timeblocks() {
   const { data: blocks = [], refetch: refetchBlocks } = trpc.timeblocks.list.useQuery();
@@ -55,7 +47,7 @@ export default function Timeblocks() {
   // Group by date
   const byDate = new Map<string, typeof blocks>();
   for (const b of blocks) {
-    const k = String(b.blockDate).slice(0, 10);
+    const k = toISODate(b.blockDate);
     if (!byDate.has(k)) byDate.set(k, []);
     byDate.get(k)!.push(b);
   }

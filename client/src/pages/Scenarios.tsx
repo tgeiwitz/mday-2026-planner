@@ -10,15 +10,7 @@ import { Slider } from "@/components/ui/slider";
 
 type Mode = "Budget" | "Confirmed" | "Reforecast";
 
-function fmtDate(d: string | Date) {
-  const dt = typeof d === "string" ? new Date(d) : d;
-  return dt.toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  });
-}
+import { fmtDate, toISODate } from "@/lib/date";
 
 export default function Scenarios() {
   const [mode, setMode] = useState<Mode>("Budget");
@@ -55,7 +47,7 @@ export default function Scenarios() {
     for (const r of routes) {
       const tb = tbMap.get(r.timeblockId);
       if (!tb) continue;
-      const dateKey = String(tb.blockDate).slice(0, 10);
+      const dateKey = toISODate(tb.blockDate);
 
       // Determine if route is "active" under this mode
       if (mode === "Confirmed" && !["Confirmed", "Processed", "Routed", "Completed"].includes(r.status)) continue;
@@ -84,7 +76,7 @@ export default function Scenarios() {
 
     // Merge with forecast for capacity
     for (const f of forecast) {
-      const k = String(f.forecastDate).slice(0, 10);
+      const k = toISODate(f.forecastDate);
       if (!byDate.has(k)) {
         byDate.set(k, {
           date: k,
@@ -248,10 +240,7 @@ export default function Scenarios() {
                   {rows.map((r) => {
                     const pct = r.capacity > 0 ? (r.tasks / r.capacity) * 100 : 0;
                     const fRow = forecast.find((f) => {
-                      const d = f.forecastDate instanceof Date
-                        ? `${f.forecastDate.getUTCFullYear()}-${String(f.forecastDate.getUTCMonth() + 1).padStart(2, "0")}-${String(f.forecastDate.getUTCDate()).padStart(2, "0")}`
-                        : String(f.forecastDate).slice(0, 10);
-                      return d === r.date;
+                      return toISODate(f.forecastDate) === r.date;
                     });
                     return (
                       <tr key={r.date}>

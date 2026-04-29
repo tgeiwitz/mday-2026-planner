@@ -43,6 +43,20 @@
       "when": 1777453257152,
       "tag": "0005_quick_nighthawk",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1777478089998,
+      "tag": "0006_spooky_doctor_spectrum",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1777478785584,
+      "tag": "0007_gray_toad",
+      "breakpoints": true
     }
   ]
 }

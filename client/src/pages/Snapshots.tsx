@@ -13,15 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-function fmtDate(d: string | Date) {
-  const dt = typeof d === "string" ? new Date(d) : d;
-  return dt.toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  });
-}
+import { fmtDate, toISODate } from "@/lib/date";
 
 function fmtRunTime(d: string | Date) {
   const dt = typeof d === "string" ? new Date(d) : d;
@@ -89,10 +81,7 @@ export default function Snapshots() {
   const compareMap = useMemo(() => {
     const m = new Map<string, (typeof compareRows)[number]>();
     for (const r of compareRows) {
-      const k =
-        r.forecastDate instanceof Date
-          ? `${r.forecastDate.getUTCFullYear()}-${String(r.forecastDate.getUTCMonth() + 1).padStart(2, "0")}-${String(r.forecastDate.getUTCDate()).padStart(2, "0")}`
-          : String(r.forecastDate).slice(0, 10);
+      const k = toISODate(r.forecastDate);
       m.set(k, r);
     }
     return m;
@@ -257,10 +246,7 @@ export default function Snapshots() {
             </thead>
             <tbody>
               {currentRows.map((r) => {
-                const k =
-                  r.forecastDate instanceof Date
-                    ? `${r.forecastDate.getUTCFullYear()}-${String(r.forecastDate.getUTCMonth() + 1).padStart(2, "0")}-${String(r.forecastDate.getUTCDate()).padStart(2, "0")}`
-                    : String(r.forecastDate).slice(0, 10);
+                const k = toISODate(r.forecastDate);
                 const prev = compareMap.get(k);
                 return (
                   <tr key={r.id}>

@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { trpc } from "@/lib/trpc";
 import { Flower, TrendingUp, AlertCircle, CheckCircle2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { fmtDateShort, dayName, toISODate } from "@/lib/date";
 
 type ForecastRow = {
   id: number;
@@ -26,9 +27,113 @@ type ForecastRow = {
 type Timeblock = { id: number; blockDate: string | Date };
 type Route = { id: number; timeblockId: number; status: string; driverId: number | null };
 
-function toDateKey(d: string | Date): string {
-  const dt = typeof d === "string" ? new Date(d) : d;
-  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
+const toDateKey = toISODate;
+
+type PlanningRow = {
+  forecastDate: string;
+  daysBeforeMday: number;
+  phase: string;
+  lafGoal: number;
+  bcEstimate: number;
+  lafHistorical: number;
+  bcHistorical: number;
+  historicalDate: string | null;
+  lafConfirmed: number;
+  bcConfirmed: number;
+  lafRoutesNeeded: number;
+  bcRoutesNeeded: number;
+  routesNeeded: number;
+  driversNeeded: number;
+  driversConfirmed: number;
+  lafCapacity: number;
+  bcCapacity: number;
+  capacityTotal: number;
+  lafRoutesPlanned: number;
+  bcRoutesPlanned: number;
+  routesPlanned: number;
+  routesAssigned: number;
+  lafGapToGoal: number;
+  bcGapToGoal: number;
+};
+
+function PlanningPanel() {
+  const { data: rows = [], isLoading } = trpc.planning.list.useQuery();
+  return (
+    <Card className="border-border/60 overflow-hidden mb-8">
+      <div className="px-6 py-4 border-b border-border/60 bg-muted/20">
+        <h2 className="font-serif text-xl">Daily Planning</h2>
+        <p className="text-xs text-muted-foreground mt-1">
+          Budget (2026 Goal) · 2025 Actual for equivalent day-before-M-Day · Confirmed (Wodely) · Zone-adjusted Routes & Drivers needed. Days-before-M-Day matches 2025 ↔ 2026 so day-of-week aligns.
+        </p>
+      </div>
+      <div className="table-scroll">
+        <table className="elegant-table">
+          <thead>
+            <tr>
+              <th className="sticky-col">Date</th>
+              <th>D-Day</th>
+              <th className="text-right">LAF Budget</th>
+              <th className="text-right">BC Budget</th>
+              <th className="text-right border-r border-border/60">Total Budget</th>
+              <th className="text-right">LAF 2025</th>
+              <th className="text-right">BC 2025</th>
+              <th className="text-right border-r border-border/60">Total 2025</th>
+              <th className="text-right">LAF Confirmed</th>
+              <th className="text-right">BC Confirmed</th>
+              <th className="text-right border-r border-border/60">% to Goal</th>
+              <th className="text-right">LAF Routes</th>
+              <th className="text-right">BC Routes</th>
+              <th className="text-right border-r border-border/60">Drivers Needed</th>
+              <th className="text-right">Drivers Confirmed</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading && (
+              <tr>
+                <td colSpan={16} className="text-center text-muted-foreground py-8">Loading…</td>
+              </tr>
+            )}
+            {(rows as PlanningRow[]).map((r) => {
+              const totalBudget = r.lafGoal + r.bcEstimate;
+              const total2025 = r.lafHistorical + r.bcHistorical;
+              const totalConfirmed = r.lafConfirmed + r.bcConfirmed;
+              const pctGoal = totalBudget > 0 ? (totalConfirmed / totalBudget) * 100 : null;
+              let statusLabel = "—";
+              let statusCls = "text-muted-foreground";
+              if (pctGoal !== null) {
+                if (pctGoal >= 100) { statusLabel = "At Goal"; statusCls = "text-emerald-600"; }
+                else if (pctGoal >= 85) { statusLabel = "On Track"; statusCls = "text-emerald-600"; }
+                else if (pctGoal >= 50) { statusLabel = "Ramping"; statusCls = "text-amber-600"; }
+                else if (pctGoal > 0) { statusLabel = "Behind"; statusCls = "text-destructive"; }
+                else { statusLabel = "Pending"; statusCls = "text-muted-foreground"; }
+              }
+              return (
+                <tr key={r.forecastDate}>
+                  <td className="sticky-col font-medium">{fmtDateShort(r.forecastDate)}<div className="text-[10px] text-muted-foreground">{dayName(r.forecastDate)}</div></td>
+                  <td className="tabular-nums">{r.daysBeforeMday >= 0 ? `${r.daysBeforeMday}d` : `M+${-r.daysBeforeMday}`}</td>
+                  <td className="text-right tabular-nums">{r.lafGoal}</td>
+                  <td className="text-right tabular-nums">{r.bcEstimate}</td>
+                  <td className="text-right tabular-nums font-medium border-r border-border/60">{totalBudget}</td>
+                  <td className="text-right tabular-nums text-muted-foreground">{r.lafHistorical}</td>
+                  <td className="text-right tabular-nums text-muted-foreground">{r.bcHistorical}</td>
+                  <td className="text-right tabular-nums text-muted-foreground border-r border-border/60">{total2025}</td>
+                  <td className="text-right tabular-nums">{r.lafConfirmed}</td>
+                  <td className="text-right tabular-nums">{r.bcConfirmed}</td>
+                  <td className="text-right tabular-nums border-r border-border/60">{pctBadge(pctGoal)}</td>
+                  <td className="text-right tabular-nums">{r.lafRoutesNeeded}</td>
+                  <td className="text-right tabular-nums">{r.bcRoutesNeeded}</td>
+                  <td className="text-right tabular-nums font-medium border-r border-border/60">{r.driversNeeded}</td>
+                  <td className="text-right tabular-nums">{r.driversConfirmed}</td>
+                  <td className={`text-xs font-medium ${statusCls}`}>{statusLabel}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
 }
 
 function pctBadge(pct: number | null) {
@@ -37,19 +142,7 @@ function pctBadge(pct: number | null) {
   return <span className={`tabular-nums ${cls}`}>{pct.toFixed(0)}%</span>;
 }
 
-function formatDate(date: string | Date) {
-  const d = typeof date === "string" ? new Date(date) : date;
-  return d.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  });
-}
-
-function dayName(date: string | Date) {
-  const d = typeof date === "string" ? new Date(date) : date;
-  return d.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" });
-}
+const formatDate = fmtDateShort;
 
 function deriveSop(lafGoal: number): { label: string; cls: string } {
   if (lafGoal >= 100) return { label: "Exception", cls: "bg-primary text-primary-foreground" };
@@ -151,7 +244,7 @@ export default function Home() {
 
       {/* KPI Cards */}
       <div className="container py-8">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           <Card className="border-border/60">
             <CardContent className="pt-6">
               <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1">2025 Total Actual</div>
@@ -189,6 +282,9 @@ export default function Home() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Daily Planning Table — Budget vs 2025 Actual vs Confirmed vs Routes Needed */}
+        <PlanningPanel />
 
         {/* Daily Forecast Table */}
         <Card className="border-border/60 overflow-hidden">

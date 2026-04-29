@@ -17,6 +17,10 @@ export const appRouter = router({
     }),
   }),
 
+  planning: router({
+    list: publicProcedure.query(() => db.getPlanningView()),
+  }),
+
   forecast: router({
     list: publicProcedure.query(() => db.listDailyForecast()),
     update: publicProcedure
@@ -182,21 +186,60 @@ export const appRouter = router({
           driverBonus: z.union([z.string(), z.number()]).optional(),
           status: z.enum(["Budgeted", "Planned", "Confirmed", "Processed", "Routed", "Completed"]).optional(),
           notes: z.string().optional(),
+          // Planned (Routed stage)
+          plannedMileage: z.union([z.string(), z.number()]).nullable().optional(),
+          plannedDuration: z.number().nullable().optional(),
+          plannedDriverPay: z.union([z.string(), z.number()]).nullable().optional(),
+          driverApproved: z.number().optional(),
+          // Actual (Completed stage)
+          actualStops: z.number().nullable().optional(),
+          actualStopsReturned: z.number().nullable().optional(),
+          actualMileage: z.union([z.string(), z.number()]).nullable().optional(),
+          actualDuration: z.number().nullable().optional(),
+          actualDriverPay: z.union([z.string(), z.number()]).nullable().optional(),
+          completionNotes: z.string().nullable().optional(),
         })
       )
       .mutation(async ({ input }) => {
         const { id, ...rest } = input;
+        const numericIntKeys = new Set([
+          "stops",
+          "estDuration",
+          "driverId",
+          "plannedDuration",
+          "driverApproved",
+          "actualStops",
+          "actualStopsReturned",
+          "actualDuration",
+        ]);
+        const passthroughKeys = new Set(["status", "notes", "completionNotes"]);
         const data: Record<string, unknown> = {};
         for (const [k, v] of Object.entries(rest)) {
-          if (v !== undefined && k !== "stops" && k !== "estDuration" && k !== "driverId" && k !== "status" && k !== "notes") {
-            data[k] = v === null ? null : String(v);
-          } else if (v !== undefined) {
+          if (v === undefined) continue;
+          if (numericIntKeys.has(k) || passthroughKeys.has(k)) {
             data[k] = v;
+          } else {
+            data[k] = v === null ? null : String(v);
           }
         }
         await db.updateRoute(id, data);
         return { success: true };
       }),
+    reviewKeep: publicProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.reviewKeepPlanned(input.id);
+        return { success: true };
+      }),
+    reviewApply: publicProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.reviewApplyEstimate(input.id);
+        return { success: true };
+      }),
+    history: publicProcedure
+      .input(z.object({ routeId: z.number() }))
+      .query(({ input }) => db.listRouteHistory(input.routeId)),
     setZones: publicProcedure
       .input(
         z.object({

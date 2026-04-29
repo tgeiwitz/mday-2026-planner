@@ -139,12 +139,19 @@ export const routes = mysqlTable("routes", {
   feeMode: mysqlEnum("feeMode", ["baseline", "blended", "locked"]).notNull().default("baseline"),
   plannedMileage: decimal("plannedMileage", { precision: 8, scale: 2 }),
   plannedDuration: int("plannedDuration"),
+  plannedDriverPay: decimal("plannedDriverPay", { precision: 10, scale: 2 }),
+  plannedLockedAt: timestamp("plannedLockedAt"),
+  needsReview: int("needsReview").notNull().default(0),
+  reviewReason: text("reviewReason"),
   driverApproved: int("driverApproved").notNull().default(0),
   driverApprovedAt: timestamp("driverApprovedAt"),
   actualStops: int("actualStops"),
   actualMileage: decimal("actualMileage", { precision: 8, scale: 2 }),
   actualDuration: int("actualDuration"),
   actualDriverPay: decimal("actualDriverPay", { precision: 10, scale: 2 }),
+  actualStopsReturned: int("actualStopsReturned"),
+  completionNotes: text("completionNotes"),
+  completedAt: timestamp("completedAt"),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -163,6 +170,34 @@ export const routeZones = mysqlTable("route_zones", {
 
 export type RouteZone = typeof routeZones.$inferSelect;
 export type InsertRouteZone = typeof routeZones.$inferInsert;
+
+// Route History (audit log for lifecycle transitions and locked-field overrides)
+export const routeHistory = mysqlTable("route_history", {
+  id: int("id").autoincrement().primaryKey(),
+  routeId: int("routeId").notNull(),
+  event: varchar("event", { length: 48 }).notNull(), // status_change | lock | review_flagged | review_kept | review_applied | pay_override | actuals_logged
+  payload: text("payload"), // JSON string with before/after/context
+  at: timestamp("at").defaultNow().notNull(),
+});
+
+export type RouteHistory = typeof routeHistory.$inferSelect;
+export type InsertRouteHistory = typeof routeHistory.$inferInsert;
+
+// Historical 2025 daily task totals per merchant — seeded from Supabase
+// `completed_tasks`. Used for equivalent-day comparison in 2026 planning
+// (2025 M-Day = May 11; 2026 M-Day = May 10 → matched on daysBeforeMday).
+export const historicalDaily2025 = mysqlTable("historical_daily_2025", {
+  id: int("id").autoincrement().primaryKey(),
+  taskDate: varchar("taskDate", { length: 10 }).notNull().unique(), // YYYY-MM-DD
+  daysBeforeMday: int("daysBeforeMday").notNull(), // May 11, 2025 = 0
+  lafTasks: int("lafTasks").notNull().default(0),
+  lafAvgFee: decimal("lafAvgFee", { precision: 8, scale: 2 }).notNull().default("0"),
+  bcTasks: int("bcTasks").notNull().default(0),
+  bcAvgFee: decimal("bcAvgFee", { precision: 8, scale: 2 }).notNull().default("0"),
+  otherTasks: int("otherTasks").notNull().default(0),
+});
+
+export type HistoricalDaily2025 = typeof historicalDaily2025.$inferSelect;
 
 // Global Settings / Assumptions
 export const globalSettings = mysqlTable("global_settings", {

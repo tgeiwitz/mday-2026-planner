@@ -10,7 +10,9 @@ import {
   driverTimeblocks,
   routes,
   routeZones,
+  routeHistory,
   globalSettings,
+  historicalDaily2025,
 } from "../drizzle/schema";
 // timeblocks already imported above for db helpers
 import { ENV } from "./_core/env";
@@ -197,11 +199,53 @@ export async function listAllRouteZones() {
 export async function updateRoute(id: number, data: Partial<typeof routes.$inferInsert>) {
   const db = await getDb();
   if (!db) return;
-  await db.update(routes).set(data).where(eq(routes.id, id));
+
+  // Load the existing record before mutating so we can handle lock/review transitions.
+  const [existing] = await db.select().from(routes).where(eq(routes.id, id)).limit(1);
+  const patch: Record<string, unknown> = { ...data };
+
+  // Lifecycle hook: when a route transitions into "Routed", capture the current
+  // estimate as the "planned" snapshot (what was sent to the driver) and lock it.
+  if (existing && data.status === "Routed" && existing.status !== "Routed") {
+    if (patch.plannedMileage === undefined) patch.plannedMileage = existing.estMileage;
+    if (patch.plannedDuration === undefined) patch.plannedDuration = existing.estDuration;
+    if (patch.plannedDriverPay === undefined) patch.plannedDriverPay = existing.estDriverPay;
+    patch.plannedLockedAt = new Date();
+    patch.needsReview = 0;
+    patch.reviewReason = null;
+    await db.insert(routeHistory).values({
+      routeId: id,
+      event: "lock",
+      payload: JSON.stringify({
+        plannedMileage: patch.plannedMileage,
+        plannedDuration: patch.plannedDuration,
+        plannedDriverPay: patch.plannedDriverPay,
+      }),
+    });
+  }
+
+  // Lifecycle hook: when a route transitions into "Completed", capture completion time.
+  if (existing && data.status === "Completed" && existing.status !== "Completed") {
+    if (patch.completedAt === undefined) patch.completedAt = new Date();
+    await db.insert(routeHistory).values({
+      routeId: id,
+      event: "status_change",
+      payload: JSON.stringify({ from: existing.status, to: "Completed" }),
+    });
+  } else if (existing && data.status && data.status !== existing.status) {
+    await db.insert(routeHistory).values({
+      routeId: id,
+      event: "status_change",
+      payload: JSON.stringify({ from: existing.status, to: data.status }),
+    });
+  }
+
+  await db.update(routes).set(patch).where(eq(routes.id, id));
+
   // Auto-recalc whenever any input that drives route economics changes.
   const triggerKeys = ["stops", "driverId", "status", "payFloorOverride", "payMaxOverride", "holidayPerStopSurcharge", "driverBonus"];
   if (triggerKeys.some((k) => k in data)) {
-    await recalculateAllRoutes();
+    await recalculateAllRoutes({ triggeredBy: `updateRoute:${id}` });
   }
 }
 
@@ -227,7 +271,60 @@ export async function setRouteZones(routeId: number, zones: { zoneId: number; ta
     await db.insert(routeZones).values(zones.map((z) => ({ routeId, ...z })));
   }
   // Auto-recalc so duration/mileage/fee reflect new zone assignments immediately.
-  await recalculateAllRoutes();
+  await recalculateAllRoutes({ triggeredBy: `setRouteZones:${routeId}` });
+}
+
+// Manual review-resolution helpers for routes that were locked (status=Routed)
+// and then had downstream changes.
+export async function listRouteHistory(routeId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(routeHistory)
+    .where(eq(routeHistory.routeId, routeId))
+    .orderBy(desc(routeHistory.at));
+}
+
+export async function reviewKeepPlanned(routeId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(routes)
+    .set({ needsReview: 0, reviewReason: null })
+    .where(eq(routes.id, routeId));
+  await db.insert(routeHistory).values({
+    routeId,
+    event: "review_kept",
+    payload: null,
+  });
+}
+
+export async function reviewApplyEstimate(routeId: number) {
+  const db = await getDb();
+  if (!db) return;
+  const [r] = await db.select().from(routes).where(eq(routes.id, routeId)).limit(1);
+  if (!r) return;
+  await db
+    .update(routes)
+    .set({
+      plannedMileage: r.estMileage,
+      plannedDuration: r.estDuration,
+      plannedDriverPay: r.estDriverPay,
+      plannedLockedAt: new Date(),
+      needsReview: 0,
+      reviewReason: null,
+    })
+    .where(eq(routes.id, routeId));
+  await db.insert(routeHistory).values({
+    routeId,
+    event: "review_applied",
+    payload: JSON.stringify({
+      plannedMileage: r.estMileage,
+      plannedDuration: r.estDuration,
+      plannedDriverPay: r.estDriverPay,
+    }),
+  });
 }
 
 // ---------- Global Settings ----------
@@ -294,7 +391,7 @@ export async function updateGlobalSettings(
   }
 }
 
-export async function recalculateAllRoutes() {
+export async function recalculateAllRoutes(opts: { triggeredBy?: string } = {}) {
   const db = await getDb();
   if (!db) return;
   const settings = await getGlobalSettings();
@@ -307,7 +404,9 @@ export async function recalculateAllRoutes() {
 
   const allRoutes = await db.select().from(routes);
   const allZones = await db.select().from(zoneMetrics);
-  const zoneMap = new Map(allZones.map((z) => [z.id, z]));
+  // route_zones.zoneId stores the business zone code (e.g. 602, 770), not the
+  // zone_metrics PK. Key the lookup map by zoneId so recalc resolves.
+  const zoneMap = new Map(allZones.map((z) => [z.zoneId, z]));
   const allRouteZones = await db.select().from(routeZones);
   const zonesByRoute = new Map<number, typeof allRouteZones>();
   for (const rz of allRouteZones) {
@@ -405,18 +504,47 @@ export async function recalculateAllRoutes() {
     if (max > 0 && driverPay > max) driverPay = max;
     const mileagePay = miles > mileageThreshold ? (miles - mileageThreshold) * mileagePayPerMile : 0;
     const platformFee = fee * platformFeePct;
-    await db
-      .update(routes)
-      .set({
-        estRouteFee: fee.toFixed(2),
-        estDriverPay: driverPay.toFixed(2),
-        estMileagePay: mileagePay.toFixed(2),
-        estPlatformFee: platformFee.toFixed(2),
-        estMileage: miles.toFixed(2),
-        estDuration: Math.round(estDurationMin),
-        feeMode,
-      })
-      .where(eq(routes.id, r.id));
+
+    // Estimate values always update (pre-Routed source of truth).
+    const estUpdate: Record<string, unknown> = {
+      estRouteFee: fee.toFixed(2),
+      estDriverPay: driverPay.toFixed(2),
+      estMileagePay: mileagePay.toFixed(2),
+      estPlatformFee: platformFee.toFixed(2),
+      estMileage: miles.toFixed(2),
+      estDuration: Math.round(estDurationMin),
+      feeMode,
+    };
+
+    // If the route is locked (status=Routed or Completed) and the newly-computed
+    // estimate diverges from the planned snapshot, flag for review.
+    const isLocked = !!r.plannedLockedAt;
+    if (isLocked && r.status !== "Completed") {
+      const plannedPay = r.plannedDriverPay ? parseFloat(String(r.plannedDriverPay)) : null;
+      const plannedMiles = r.plannedMileage ? parseFloat(String(r.plannedMileage)) : null;
+      const plannedDur = r.plannedDuration ?? null;
+      const reasons: string[] = [];
+      if (plannedPay !== null && Math.abs(plannedPay - driverPay) > 0.5) {
+        reasons.push(`pay ${plannedPay.toFixed(2)} → ${driverPay.toFixed(2)}`);
+      }
+      if (plannedMiles !== null && Math.abs(plannedMiles - miles) > 0.5) {
+        reasons.push(`mileage ${plannedMiles.toFixed(1)} → ${miles.toFixed(1)}`);
+      }
+      if (plannedDur !== null && Math.abs(plannedDur - estDurationMin) > 2) {
+        reasons.push(`duration ${plannedDur}m → ${Math.round(estDurationMin)}m`);
+      }
+      if (reasons.length > 0 && r.needsReview !== 1) {
+        estUpdate.needsReview = 1;
+        estUpdate.reviewReason = reasons.join("; ");
+        await db.insert(routeHistory).values({
+          routeId: r.id,
+          event: "review_flagged",
+          payload: JSON.stringify({ reasons, triggeredBy: opts.triggeredBy ?? null }),
+        });
+      }
+    }
+
+    await db.update(routes).set(estUpdate).where(eq(routes.id, r.id));
   }
 }
 
@@ -597,4 +725,167 @@ export async function getWodelyFeeMap() {
     v.avgFee = v.count > 0 ? v.totalFee / v.count : 0;
   });
   return map;
+}
+
+
+// ---------- Daily Planning (Forecast vs 2025 Actual vs Confirmed vs Capacity) ----------
+
+// M-Day anchors. 2025-05-11 and 2026-05-10 both fall on Sunday, so
+// daysBeforeMday mapping is apples-to-apples for day-of-week too.
+const MDAY_2026_UTC = Date.UTC(2026, 4, 10);
+const MSEC_PER_DAY = 86_400_000;
+
+function daysBeforeMday2026(iso: string): number {
+  const d = Date.UTC(
+    parseInt(iso.slice(0, 4), 10),
+    parseInt(iso.slice(5, 7), 10) - 1,
+    parseInt(iso.slice(8, 10), 10),
+  );
+  return Math.round((MDAY_2026_UTC - d) / MSEC_PER_DAY);
+}
+
+export async function listHistoricalDaily2025() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(historicalDaily2025);
+}
+
+// Computes a day-by-day planning view combining:
+//   - 2026 goal (from dailyForecast)
+//   - 2025 equivalent-day actual (matched on daysBeforeMday)
+//   - Wodely confirmed (from dailyForecast.lafConfirmed / bcConfirmed)
+//   - Routes planned + drivers assigned (counted from routes)
+//   - Capacity from confirmed drivers × weighted avg stops/route
+// Returns one row per date in the forecast window.
+export async function getPlanningView() {
+  const db = await getDb();
+  if (!db) return [];
+
+  const [forecastRows, historicalRows, routeRows, zoneRows, driverTbRows, tbRows] = await Promise.all([
+    db.select().from(dailyForecast).orderBy(asc(dailyForecast.forecastDate)),
+    db.select().from(historicalDaily2025),
+    db.select().from(routes),
+    db.select().from(zoneMetrics),
+    db.select().from(driverTimeblocks),
+    db.select().from(timeblocks),
+  ]);
+
+  // Zone lookup (business zoneId -> metrics).
+  const zoneById = new Map<number, typeof zoneRows[number]>();
+  for (const z of zoneRows) zoneById.set(z.zoneId, z);
+
+  // Weighted avg stops/route per merchant (from zone baselines).
+  // For each zone, tasks-per-route = targetDuration / travelTime2026 (min).
+  // Weight zones by their 2025 task volume so mix reflects reality.
+  const TARGET_LAF_MIN = 90; // Wave 1 window typical
+  const TARGET_BC_MIN = 120;
+  // Equal-weighted: avg of (targetDuration / travelTime2026) across active zones.
+  // TODO: weight by actual per-zone task volume once seeded from Supabase.
+  let lafSum = 0, bcSum = 0, zoneCount = 0;
+  for (const z of zoneRows) {
+    const travel = Number(z.travelTime2026) || 0;
+    if (travel <= 0) continue;
+    lafSum += TARGET_LAF_MIN / travel;
+    bcSum += TARGET_BC_MIN / travel;
+    zoneCount++;
+  }
+  const avgLafStopsPerRoute = zoneCount > 0 ? lafSum / zoneCount : 10;
+  const avgBcStopsPerRoute = zoneCount > 0 ? bcSum / zoneCount : 10;
+
+  const tbById = new Map<number, typeof tbRows[number]>();
+  for (const tb of tbRows) tbById.set(tb.id, tb);
+
+  const toIso = (v: unknown): string => {
+    if (v instanceof Date) {
+      return `${v.getUTCFullYear()}-${String(v.getUTCMonth() + 1).padStart(2, "0")}-${String(v.getUTCDate()).padStart(2, "0")}`;
+    }
+    const s = String(v);
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    const d = new Date(s);
+    if (Number.isNaN(d.getTime())) return s;
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+  };
+
+  // Group routes by forecast date.
+  const routesByDate = new Map<string, typeof routeRows>();
+  for (const r of routeRows) {
+    const tb = tbById.get(r.timeblockId);
+    if (!tb) continue;
+    const key = toIso(tb.blockDate);
+    if (!routesByDate.has(key)) routesByDate.set(key, []);
+    routesByDate.get(key)!.push(r);
+  }
+
+  // Driver-confirmed counts per date.
+  const confirmedDriversByDate = new Map<string, Set<number>>();
+  for (const dt of driverTbRows) {
+    if (dt.assignmentStatus !== "Scheduled" && dt.assignmentStatus !== "Signed Up") continue;
+    const tb = tbById.get(dt.timeblockId);
+    if (!tb) continue;
+    const key = toIso(tb.blockDate);
+    if (!confirmedDriversByDate.has(key)) confirmedDriversByDate.set(key, new Set());
+    confirmedDriversByDate.get(key)!.add(dt.driverId);
+  }
+
+  // Historical lookup by daysBeforeMday.
+  const histByOffset = new Map<number, typeof historicalRows[number]>();
+  for (const h of historicalRows) histByOffset.set(h.daysBeforeMday, h);
+
+  return forecastRows.map((f) => {
+    const iso = toIso(f.forecastDate);
+    const offset = daysBeforeMday2026(iso);
+    const hist = histByOffset.get(offset);
+    const dayRoutes = routesByDate.get(iso) ?? [];
+    const lafRoutes = dayRoutes.filter((r) => r.merchant === "LAF").length;
+    const bcRoutes = dayRoutes.filter((r) => r.merchant === "BC").length;
+    const assignedRoutes = dayRoutes.filter((r) => r.driverId != null).length;
+    const lafGoal = Number(f.laf2026Goal) || 0;
+    const bcEstimate = Number(f.bc2026Goal) || 0;
+    const lafConfirmed = Number(f.lafConfirmed) || 0;
+    const bcConfirmed = Number(f.bcConfirmed) || 0;
+    const lafRoutesNeeded = Math.ceil(lafGoal / Math.max(avgLafStopsPerRoute, 1));
+    const bcRoutesNeeded = Math.ceil(bcEstimate / Math.max(avgBcStopsPerRoute, 1));
+    const driversNeeded = lafRoutesNeeded + bcRoutesNeeded;
+    const driversConfirmed = confirmedDriversByDate.get(iso)?.size ?? 0;
+    // Capacity: confirmed drivers allocated proportionally to goal mix, then
+    // converted to tasks via weighted stops/route.
+    const goalTotal = lafGoal + bcEstimate;
+    const lafShare = goalTotal > 0 ? lafGoal / goalTotal : 0.5;
+    const lafCapacityDrivers = driversConfirmed * lafShare;
+    const bcCapacityDrivers = driversConfirmed * (1 - lafShare);
+    const lafCapacity = Math.floor(lafCapacityDrivers * avgLafStopsPerRoute);
+    const bcCapacity = Math.floor(bcCapacityDrivers * avgBcStopsPerRoute);
+    return {
+      forecastDate: iso,
+      daysBeforeMday: offset,
+      phase: f.phase,
+      // 2026 goal
+      lafGoal,
+      bcEstimate,
+      // 2025 equivalent-day actual
+      lafHistorical: hist ? hist.lafTasks : 0,
+      bcHistorical: hist ? hist.bcTasks : 0,
+      historicalDate: hist ? hist.taskDate : null,
+      // Confirmed (Wodely)
+      lafConfirmed,
+      bcConfirmed,
+      // Capacity plan
+      lafRoutesNeeded,
+      bcRoutesNeeded,
+      routesNeeded: lafRoutesNeeded + bcRoutesNeeded,
+      driversNeeded,
+      driversConfirmed,
+      lafCapacity,
+      bcCapacity,
+      capacityTotal: lafCapacity + bcCapacity,
+      // Existing operational counts
+      lafRoutesPlanned: lafRoutes,
+      bcRoutesPlanned: bcRoutes,
+      routesPlanned: dayRoutes.length,
+      routesAssigned: assignedRoutes,
+      // Pacing
+      lafGapToGoal: lafGoal > 0 ? lafConfirmed / lafGoal : 0,
+      bcGapToGoal: bcEstimate > 0 ? bcConfirmed / bcEstimate : 0,
+    };
+  });
 }
