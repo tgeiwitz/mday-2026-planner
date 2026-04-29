@@ -4,6 +4,7 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import * as db from "./db";
+import { aggregateByDate, fetchConfirmedOrders, testAuth } from "./wodely";
 
 export const appRouter = router({
   system: systemRouter,
@@ -210,6 +211,59 @@ export const appRouter = router({
     recalculate: publicProcedure.mutation(async () => {
       await db.recalculateAllRoutes();
       return { success: true };
+    }),
+  }),
+
+  wodely: router({
+    testAuth: publicProcedure.query(() => testAuth()),
+    syncConfirmed: publicProcedure.mutation(async () => {
+      const startIso = "2026-04-28T00:00:00.000Z";
+      const endIso = "2026-05-19T23:59:59.999Z";
+      const tasks = await fetchConfirmedOrders(startIso, endIso);
+      const agg = aggregateByDate(tasks);
+      const forecast = await db.listDailyForecast();
+      let updated = 0;
+      for (const row of forecast) {
+        const d = row.forecastDate;
+        const key = d instanceof Date
+          ? `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`
+          : String(d).slice(0, 10);
+        const counts = agg[key];
+        if (counts) {
+          await db.updateDailyForecast(row.id, {
+            lafConfirmed: counts.laf,
+            bcConfirmed: counts.bc,
+          });
+          updated += 1;
+        }
+      }
+      // Cache per-task fees so routes can compute confirmed revenue
+      await db.cacheWodelyTasks(tasks);
+      // Recalculate all routes so blended fees reflect latest sync
+      await db.recalculateAllRoutes();
+      return { success: true, syncedDates: updated, totalTasks: tasks.length, lastSyncedAt: new Date().toISOString() };
+    }),
+  }),
+
+  snapshots: router({
+    list: publicProcedure.query(() => db.listSnapshotRuns()),
+    getRows: publicProcedure
+      .input(z.object({ runId: z.number() }))
+      .query(({ input }) => db.getSnapshotRows(input.runId)),
+    capture: publicProcedure
+      .input(z.object({ label: z.string().optional() }).optional())
+      .mutation(async ({ input }) => {
+        const result = await db.captureSnapshot("manual", input?.label);
+        return { success: true, ...result };
+      }),
+  }),
+
+  // Scheduled-task entrypoint for daily auto snapshot. Open to any signed-in user
+  // (scheduled tasks run with role="user").
+  scheduled: router({
+    dailySnapshot: protectedProcedure.mutation(async () => {
+      const result = await db.captureSnapshot("auto", `auto-${new Date().toISOString().slice(0, 10)}`);
+      return { success: true, ...result };
     }),
   }),
 

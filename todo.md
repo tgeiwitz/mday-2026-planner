@@ -31,3 +31,48 @@
 ## Testing
 - [x] Vitest for planner endpoints (7 tests passing)
 - [x] Verify seed data includes full Apr 29 - May 18 range
+
+## v2 Enhancements (complete)
+- [x] Discover Wodely API credentials and endpoints (docs from Google Drive)
+- [x] Build Wodely order sync service (searches /v2/tasks/search by date + merchantId)
+- [x] Sync endpoint aggregates by NY-local date and updates lafConfirmed / bcConfirmed
+- [x] Driver sign-up UI on Timeblocks page (add / remove / toggle status)
+- [x] Dispatch controls: schedule driver (click badge toggles Signed Up <-> Scheduled)
+- [x] Dispatch controls: confirm driver assignments for routes (driver select per route)
+- [x] Dispatch controls: update/reassign driver on a route (Routes page)
+- [x] Wodely sync button on Scenarios page with live confirmed LAF / BC columns
+- [x] Vitest validates Wodely API key via /auth/test
+
+
+## v3 Snapshots & Day-over-Day Tracking
+- [ ] Add forecast_snapshots and snapshot_runs tables
+- [ ] Snapshot endpoint that captures entire daily forecast + key assumptions
+- [ ] Auto-snapshot trigger (scheduled task hitting an API endpoint daily)
+- [ ] On-demand "Snapshot Now" button on Dashboard
+- [ ] Snapshots page with day-over-day deltas (Goals, Confirmed, Revenue, Capacity %)
+- [ ] Vitest coverage for snapshot endpoints
+
+## v4 Zone Editor per Route (in progress)
+- [ ] Add "Manage Zones" drawer/modal on each route row in Routes page
+- [ ] List all 27 zones with editable task count inputs
+- [ ] Save mutation -> update route_zones then trigger route recalc (fee, mileage, duration, driver pay)
+- [ ] Duration calc uses travelTime2026 × taskCount per zone + driver differential
+- [ ] Show zone list and duration total live in the drawer before save
+
+## v5 Wodely-Driven Fee Calc
+- [ ] Cache per-task Wodely fees by (merchant, date, zone) on sync
+- [ ] Route fee calc: blended (Wodely confirmed + baseline for unconfirmed) until status = Routed
+- [ ] Once status = Routed or later, fee = sum of Wodely taskFee only
+- [ ] Driver pay, platform fee, mileage pay all flow from the resolved route fee
+- [ ] UI indicates when fee is blended vs locked
+
+## v6 Auto-recalc + Reforecast Inputs + Routed Actuals
+- [ ] recalculateAllRoutes also recomputes estDuration (zone.travelTime × stops_per_zone + driver differential)
+- [ ] Any edit (stops, zones, drivers, assumptions, Wodely sync) triggers full recalc automatically
+- [ ] Remove reforecast sliders; replace with editable per-date reforecast inputs that persist
+- [ ] Add reforecastLafGoal / reforecastBcGoal to daily_forecast, used by Routes when status < Routed
+- [ ] Add route stage fields: plannedMileage, plannedDuration, driverApproved, driverApprovedAt
+- [ ] Add actuals fields: actualMileage, actualDuration, actualDriverPay, actualStops
+- [ ] Routed stage UI: dispatch enters planned mileage/duration; driver approval toggle
+- [ ] Completed stage UI: enter actuals; calc variance
+- [ ] Variance Analysis page: forecast vs planned vs actual

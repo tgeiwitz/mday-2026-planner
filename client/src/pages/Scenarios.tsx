@@ -3,7 +3,9 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
 import { useMemo, useState } from "react";
 import { Progress } from "@/components/ui/progress";
-
+import { Button } from "@/components/ui/button";
+import { Loader2, RefreshCw } from "lucide-react";
+import { toast } from "sonner";
 import { Slider } from "@/components/ui/slider";
 
 type Mode = "Budget" | "Confirmed" | "Reforecast";
@@ -24,7 +26,18 @@ export default function Scenarios() {
   const [feeAdj, setFeeAdj] = useState([100]);
   const { data: routes = [] } = trpc.routes.list.useQuery();
   const { data: timeblocks = [] } = trpc.timeblocks.list.useQuery();
-  const { data: forecast = [] } = trpc.forecast.list.useQuery();
+  const { data: forecast = [], refetch: refetchForecast } = trpc.forecast.list.useQuery();
+  const [lastSync, setLastSync] = useState<string | null>(null);
+  const syncWodely = trpc.wodely.syncConfirmed.useMutation({
+    onSuccess: (res) => {
+      setLastSync(new Date().toLocaleString());
+      refetchForecast();
+      toast.success(`Wodely sync: ${res.syncedDates} days updated (${res.totalTasks} tasks)`);
+    },
+    onError: (err) => {
+      toast.error(`Wodely sync failed: ${err.message}`);
+    },
+  });
 
   const tbMap = new Map(timeblocks.map((t) => [t.id, t]));
 
@@ -119,11 +132,32 @@ export default function Scenarios() {
 
       <div className="container py-8">
         <Tabs value={mode} onValueChange={(v) => setMode(v as Mode)}>
-          <TabsList className="mb-6">
-            <TabsTrigger value="Budget">Budget</TabsTrigger>
-            <TabsTrigger value="Confirmed">Confirmed Orders</TabsTrigger>
-            <TabsTrigger value="Reforecast">Reforecast</TabsTrigger>
-          </TabsList>
+          <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
+            <TabsList>
+              <TabsTrigger value="Budget">Budget</TabsTrigger>
+              <TabsTrigger value="Confirmed">Confirmed Orders</TabsTrigger>
+              <TabsTrigger value="Reforecast">Reforecast</TabsTrigger>
+            </TabsList>
+            <div className="flex items-center gap-3">
+              {lastSync && (
+                <span className="text-[11px] text-muted-foreground">Last sync: {lastSync}</span>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={syncWodely.isPending}
+                onClick={() => syncWodely.mutate()}
+                className="gap-2"
+              >
+                {syncWodely.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-3.5 w-3.5" />
+                )}
+                Sync from Wodely
+              </Button>
+            </div>
+          </div>
 
           {mode === "Reforecast" && (
             <Card className="border-border/60 mb-6">
@@ -191,7 +225,7 @@ export default function Scenarios() {
               <div className="px-6 py-4 border-b border-border/60 bg-muted/20">
                 <h2 className="font-serif text-xl">By Day</h2>
                 <p className="text-[11px] text-muted-foreground mt-1">
-                  Capacity utilization shown as tasks / max capacity
+                  Capacity utilization shown as tasks / max capacity. Live confirmed orders from Wodely shown separately.
                 </p>
               </div>
               <table className="elegant-table">
@@ -200,6 +234,8 @@ export default function Scenarios() {
                     <th>Date</th>
                     <th className="text-right">Routes</th>
                     <th className="text-right">Tasks</th>
+                    <th className="text-right">LAF Conf.</th>
+                    <th className="text-right">BC Conf.</th>
                     <th className="text-right">Revenue</th>
                     <th className="text-right">Driver Pay</th>
                     <th className="text-right">Platform</th>
@@ -210,16 +246,24 @@ export default function Scenarios() {
                 <tbody>
                   {rows.map((r) => {
                     const pct = r.capacity > 0 ? (r.tasks / r.capacity) * 100 : 0;
+                    const fRow = forecast.find((f) => {
+                      const d = f.forecastDate instanceof Date
+                        ? `${f.forecastDate.getUTCFullYear()}-${String(f.forecastDate.getUTCMonth() + 1).padStart(2, "0")}-${String(f.forecastDate.getUTCDate()).padStart(2, "0")}`
+                        : String(f.forecastDate).slice(0, 10);
+                      return d === r.date;
+                    });
                     return (
                       <tr key={r.date}>
                         <td className="whitespace-nowrap font-medium">{fmtDate(r.date)}</td>
                         <td className="num-cell">{r.routes}</td>
                         <td className="num-cell">{r.tasks}</td>
+                        <td className="num-cell text-emerald-700">{fRow?.lafConfirmed ?? 0}</td>
+                        <td className="num-cell text-emerald-700">{fRow?.bcConfirmed ?? 0}</td>
                         <td className="num-cell">${r.revenue.toFixed(0)}</td>
                         <td className="num-cell text-primary">${r.driverPay.toFixed(0)}</td>
                         <td className="num-cell text-muted-foreground">${r.platform.toFixed(0)}</td>
                         <td className="num-cell text-muted-foreground">{r.capacity}</td>
-                        <td className="w-48">
+                        <td className="w-40">
                           <div className="flex items-center gap-2">
                             <Progress value={Math.min(pct, 100)} className="h-2 flex-1" />
                             <span className="text-[11px] font-mono text-muted-foreground w-10 text-right">

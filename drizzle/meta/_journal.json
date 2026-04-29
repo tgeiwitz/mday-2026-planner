@@ -15,6 +15,34 @@
       "when": 1777450172051,
       "tag": "0001_faithful_hemingway",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1777451975676,
+      "tag": "0002_powerful_tenebrous",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1777452680169,
+      "tag": "0003_sparkling_whistler",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1777452820324,
+      "tag": "0004_dapper_dark_beast",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1777453257152,
+      "tag": "0005_quick_nighthawk",
+      "breakpoints": true
     }
   ]
 }

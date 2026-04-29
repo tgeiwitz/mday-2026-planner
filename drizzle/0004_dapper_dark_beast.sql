@@ -1,0 +1,1 @@
+ALTER TABLE `routes` ADD `feeMode` enum('baseline','blended','locked') DEFAULT 'baseline' NOT NULL;

@@ -311,16 +311,63 @@ export async function recalculateAllRoutes() {
   const allTimeblocks = await db.select().from(timeblocks);
   const tbMap = new Map(allTimeblocks.map((t) => [t.id, t]));
 
+  // Wodely per-task fees by (merchant|YYYY-MM-DD)
+  const wodelyFees = await getWodelyFeeMap();
+
   for (const r of allRoutes) {
     const zs = zonesByRoute.get(r.id) ?? [];
-    let fee = 0;
+    let baselineFee = 0;
     let miles = 0;
     for (const z of zs) {
       const zm = zoneMap.get(z.zoneId);
       if (!zm) continue;
       const taskFee = r.merchant === "LAF" ? parseFloat(String(zm.lafFee2026)) : parseFloat(String(zm.bcFee2026));
-      fee += taskFee * z.taskCount;
+      baselineFee += taskFee * z.taskCount;
       miles += parseFloat(String(zm.distance2026)) * z.taskCount;
+    }
+
+    // Resolve confirmed fees from Wodely for this route's date + merchant
+    const tbForDate = tbMap.get(r.timeblockId);
+    let wodelyKey = "";
+    if (tbForDate) {
+      const d = tbForDate.blockDate instanceof Date
+        ? `${tbForDate.blockDate.getUTCFullYear()}-${String(tbForDate.blockDate.getUTCMonth() + 1).padStart(2, "0")}-${String(tbForDate.blockDate.getUTCDate()).padStart(2, "0")}`
+        : String(tbForDate.blockDate).slice(0, 10);
+      wodelyKey = `${r.merchant}|${d}`;
+    }
+    const wodelyAgg = wodelyFees.get(wodelyKey);
+
+    // Distribute Wodely fees proportional to this route's share of the day's task count
+    // (Sum task count across all routes for this date/merchant.)
+    let fee = baselineFee;
+    let feeMode: "baseline" | "blended" | "locked" = "baseline";
+    if (wodelyAgg && wodelyAgg.count > 0) {
+      const dayRoutes = allRoutes.filter((rr) => {
+        const tb = tbMap.get(rr.timeblockId);
+        if (!tb) return false;
+        const d = tb.blockDate instanceof Date
+          ? `${tb.blockDate.getUTCFullYear()}-${String(tb.blockDate.getUTCMonth() + 1).padStart(2, "0")}-${String(tb.blockDate.getUTCDate()).padStart(2, "0")}`
+          : String(tb.blockDate).slice(0, 10);
+        return rr.merchant === r.merchant && `${rr.merchant}|${d}` === wodelyKey;
+      });
+      const totalDayStops = dayRoutes.reduce((s, x) => s + x.stops, 0);
+      const routeSharePct = totalDayStops > 0 ? r.stops / totalDayStops : 0;
+      const routeWodelyFee = wodelyAgg.totalFee * routeSharePct;
+      const confirmedTaskCount = Math.round(wodelyAgg.count * routeSharePct);
+      const isLocked = ["Routed", "Completed"].includes(r.status);
+      if (isLocked) {
+        fee = routeWodelyFee;
+        feeMode = "locked";
+      } else if (confirmedTaskCount >= r.stops) {
+        fee = routeWodelyFee;
+        feeMode = "locked";
+      } else {
+        // Blended: Wodely portion + baseline for remaining not-yet-confirmed stops
+        const remainingStops = Math.max(r.stops - confirmedTaskCount, 0);
+        const baselinePerStop = r.stops > 0 ? baselineFee / r.stops : 0;
+        fee = routeWodelyFee + baselinePerStop * remainingStops;
+        feeMode = "blended";
+      }
     }
     if (holidayEnabled) fee += holidayPerStop * r.stops;
     let driverPay = fee * driverPayPct;
@@ -340,7 +387,187 @@ export async function recalculateAllRoutes() {
         estMileagePay: mileagePay.toFixed(2),
         estPlatformFee: platformFee.toFixed(2),
         estMileage: miles.toFixed(2),
+        feeMode,
       })
       .where(eq(routes.id, r.id));
   }
+}
+
+
+// ======================
+// Snapshots
+// ======================
+import { snapshotRuns, forecastSnapshots } from "../drizzle/schema";
+
+export async function captureSnapshot(triggerType: "auto" | "manual", label?: string) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+
+  const forecast = await db.select().from(dailyForecast);
+  const allRoutes = await db.select().from(routes);
+  const allTimeblocks = await db.select().from(timeblocks);
+  const tbMap = new Map(allTimeblocks.map((t) => [t.id, t]));
+
+  let totalRoutes = 0;
+  let totalRevenue = 0;
+  let totalDriverPay = 0;
+  let totalGoalLaf = 0;
+  let totalGoalBc = 0;
+  let totalConfirmedLaf = 0;
+  let totalConfirmedBc = 0;
+
+  for (const f of forecast) {
+    totalGoalLaf += f.laf2026Goal;
+    totalGoalBc += f.bc2026Goal;
+    totalConfirmedLaf += f.lafConfirmed;
+    totalConfirmedBc += f.bcConfirmed;
+  }
+  for (const r of allRoutes) {
+    totalRoutes += 1;
+    totalRevenue += Number(r.estRouteFee);
+    totalDriverPay += Number(r.estDriverPay) + Number(r.estMileagePay) + Number(r.driverBonus);
+  }
+
+  const res = await db.insert(snapshotRuns).values({
+    triggerType,
+    label: label ?? null,
+    totalRoutes,
+    totalConfirmedLaf,
+    totalConfirmedBc,
+    totalGoalLaf,
+    totalGoalBc,
+    totalRevenue: totalRevenue.toFixed(2),
+    totalDriverPay: totalDriverPay.toFixed(2),
+  });
+  const runId = (res as unknown as { insertId: number }[])[0]?.insertId
+    ?? (res as unknown as { insertId: number }).insertId;
+
+  // Per-date aggregation from routes via timeblock date
+  const routesByDate = new Map<string, { planned: number; confirmed: number; revenue: number; driverPay: number }>();
+  for (const r of allRoutes) {
+    const tb = tbMap.get(r.timeblockId);
+    if (!tb) continue;
+    const d = tb.blockDate instanceof Date
+      ? `${tb.blockDate.getUTCFullYear()}-${String(tb.blockDate.getUTCMonth() + 1).padStart(2, "0")}-${String(tb.blockDate.getUTCDate()).padStart(2, "0")}`
+      : String(tb.blockDate).slice(0, 10);
+    if (!routesByDate.has(d)) routesByDate.set(d, { planned: 0, confirmed: 0, revenue: 0, driverPay: 0 });
+    const row = routesByDate.get(d)!;
+    row.planned += 1;
+    if (["Confirmed", "Processed", "Routed", "Completed"].includes(r.status)) row.confirmed += 1;
+    row.revenue += Number(r.estRouteFee);
+    row.driverPay += Number(r.estDriverPay) + Number(r.estMileagePay) + Number(r.driverBonus);
+  }
+
+  const snapRows: Array<typeof forecastSnapshots.$inferInsert> = [];
+  for (const f of forecast) {
+    const d = f.forecastDate instanceof Date
+      ? `${f.forecastDate.getUTCFullYear()}-${String(f.forecastDate.getUTCMonth() + 1).padStart(2, "0")}-${String(f.forecastDate.getUTCDate()).padStart(2, "0")}`
+      : String(f.forecastDate).slice(0, 10);
+    const r = routesByDate.get(d) ?? { planned: 0, confirmed: 0, revenue: 0, driverPay: 0 };
+    snapRows.push({
+      snapshotRunId: runId,
+      forecastDate: f.forecastDate,
+      dayName: f.dayName,
+      laf2026Goal: f.laf2026Goal,
+      bc2026Goal: f.bc2026Goal,
+      lafConfirmed: f.lafConfirmed,
+      bcConfirmed: f.bcConfirmed,
+      maxLafCapacity: f.maxLafCapacity,
+      maxBcCapacity: f.maxBcCapacity,
+      routesPlanned: r.planned,
+      routesConfirmed: r.confirmed,
+      revenue: r.revenue.toFixed(2),
+      driverPay: r.driverPay.toFixed(2),
+    });
+  }
+  if (snapRows.length > 0) await db.insert(forecastSnapshots).values(snapRows);
+  return { id: runId, totalRoutes, totalRevenue, totalDriverPay, totalConfirmedLaf, totalConfirmedBc };
+}
+
+export async function listSnapshotRuns(limit = 30) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(snapshotRuns).orderBy(desc(snapshotRuns.createdAt)).limit(limit);
+}
+
+export async function getSnapshotRows(runId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(forecastSnapshots).where(eq(forecastSnapshots.snapshotRunId, runId));
+}
+
+
+// ======================
+// Wodely task fee cache
+// ======================
+import { wodelyTaskCache } from "../drizzle/schema";
+
+/**
+ * Cache Wodely tasks in our DB so routes can use per-task fees.
+ * Stores one row per wodelyTaskId (upserts on duplicate).
+ */
+export async function cacheWodelyTasks(
+  tasks: Array<{
+    id: number;
+    merchantId: string;
+    afterDateTime?: string;
+    deliveryFee?: number;
+  }>
+) {
+  const db = await getDb();
+  if (!db || tasks.length === 0) return;
+  const LAF = "09cc8b76-6b54-4995-b136-a5dea3f0656a";
+  const rows: Array<typeof wodelyTaskCache.$inferInsert> = [];
+  for (const t of tasks) {
+    if (!t.afterDateTime) continue;
+    const dt = new Date(t.afterDateTime);
+    const localDate = dt.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+    rows.push({
+      wodelyTaskId: String(t.id),
+      merchant: t.merchantId === LAF ? "LAF" : "BC",
+      deliveryDate: localDate as unknown as Date,
+      taskFee: String((t.deliveryFee ?? 0).toFixed(2)),
+    });
+  }
+  // Chunked upsert
+  const chunk = 500;
+  for (let i = 0; i < rows.length; i += chunk) {
+    const slice = rows.slice(i, i + chunk);
+    await db
+      .insert(wodelyTaskCache)
+      .values(slice)
+      .onDuplicateKeyUpdate({
+        set: {
+          merchant: sql`VALUES(merchant)`,
+          deliveryDate: sql`VALUES(deliveryDate)`,
+          taskFee: sql`VALUES(taskFee)`,
+          syncedAt: sql`CURRENT_TIMESTAMP`,
+        },
+      });
+  }
+}
+
+/**
+ * Returns an aggregated map of confirmed Wodely fees by (merchant|localDate):
+ *   key = `${merchant}|YYYY-MM-DD`   -> { count, totalFee, avgFee }
+ */
+export async function getWodelyFeeMap() {
+  const db = await getDb();
+  const map = new Map<string, { count: number; totalFee: number; avgFee: number }>();
+  if (!db) return map;
+  const rows = await db.select().from(wodelyTaskCache);
+  for (const r of rows) {
+    const d = r.deliveryDate instanceof Date
+      ? `${r.deliveryDate.getUTCFullYear()}-${String(r.deliveryDate.getUTCMonth() + 1).padStart(2, "0")}-${String(r.deliveryDate.getUTCDate()).padStart(2, "0")}`
+      : String(r.deliveryDate).slice(0, 10);
+    const key = `${r.merchant}|${d}`;
+    const prev = map.get(key) ?? { count: 0, totalFee: 0, avgFee: 0 };
+    prev.count += 1;
+    prev.totalFee += Number(r.taskFee);
+    map.set(key, prev);
+  }
+  Array.from(map.values()).forEach((v) => {
+    v.avgFee = v.count > 0 ? v.totalFee / v.count : 0;
+  });
+  return map;
 }

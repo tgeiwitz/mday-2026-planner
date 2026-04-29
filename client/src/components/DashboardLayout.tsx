@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Users, MapPin, Clock, Route as RouteIcon, Gauge, Settings } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, MapPin, Clock, Route as RouteIcon, Gauge, Settings, Camera } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -34,6 +34,7 @@ const menuItems = [
   { icon: Clock, label: "Timeblocks", path: "/timeblocks" },
   { icon: RouteIcon, label: "Routes", path: "/routes" },
   { icon: Gauge, label: "Scenarios", path: "/scenarios" },
+  { icon: Camera, label: "Snapshots", path: "/snapshots" },
   { icon: Settings, label: "Settings", path: "/settings" },
 ];
 

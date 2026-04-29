@@ -31,6 +31,8 @@ export const dailyForecast = mysqlTable("daily_forecast", {
   bcConfirmed: int("bcConfirmed").notNull().default(0),
   maxLafCapacity: int("maxLafCapacity").notNull().default(0),
   maxBcCapacity: int("maxBcCapacity").notNull().default(0),
+  lafReforecast: int("lafReforecast").notNull().default(0),
+  bcReforecast: int("bcReforecast").notNull().default(0),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -134,6 +136,15 @@ export const routes = mysqlTable("routes", {
   holidayPerStopSurcharge: decimal("holidayPerStopSurcharge", { precision: 6, scale: 2 }).notNull().default("0"),
   driverBonus: decimal("driverBonus", { precision: 8, scale: 2 }).notNull().default("0"),
   status: mysqlEnum("status", ["Budgeted", "Planned", "Confirmed", "Processed", "Routed", "Completed"]).notNull().default("Budgeted"),
+  feeMode: mysqlEnum("feeMode", ["baseline", "blended", "locked"]).notNull().default("baseline"),
+  plannedMileage: decimal("plannedMileage", { precision: 8, scale: 2 }),
+  plannedDuration: int("plannedDuration"),
+  driverApproved: int("driverApproved").notNull().default(0),
+  driverApprovedAt: timestamp("driverApprovedAt"),
+  actualStops: int("actualStops"),
+  actualMileage: decimal("actualMileage", { precision: 8, scale: 2 }),
+  actualDuration: int("actualDuration"),
+  actualDriverPay: decimal("actualDriverPay", { precision: 10, scale: 2 }),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -164,3 +175,58 @@ export const globalSettings = mysqlTable("global_settings", {
 
 export type GlobalSetting = typeof globalSettings.$inferSelect;
 export type InsertGlobalSetting = typeof globalSettings.$inferInsert;
+
+// Snapshot Runs: one row per snapshot captured (daily auto or on-demand)
+export const snapshotRuns = mysqlTable("snapshot_runs", {
+  id: int("id").autoincrement().primaryKey(),
+  triggerType: mysqlEnum("triggerType", ["auto", "manual"]).notNull().default("manual"),
+  label: varchar("label", { length: 128 }),
+  totalRoutes: int("totalRoutes").notNull().default(0),
+  totalConfirmedLaf: int("totalConfirmedLaf").notNull().default(0),
+  totalConfirmedBc: int("totalConfirmedBc").notNull().default(0),
+  totalGoalLaf: int("totalGoalLaf").notNull().default(0),
+  totalGoalBc: int("totalGoalBc").notNull().default(0),
+  totalRevenue: decimal("totalRevenue", { precision: 12, scale: 2 }).notNull().default("0"),
+  totalDriverPay: decimal("totalDriverPay", { precision: 12, scale: 2 }).notNull().default("0"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type SnapshotRun = typeof snapshotRuns.$inferSelect;
+export type InsertSnapshotRun = typeof snapshotRuns.$inferInsert;
+
+// Forecast Snapshots: per-date rows captured during each snapshot run
+export const forecastSnapshots = mysqlTable("forecast_snapshots", {
+  id: int("id").autoincrement().primaryKey(),
+  snapshotRunId: int("snapshotRunId").notNull(),
+  forecastDate: date("forecastDate").notNull(),
+  dayName: varchar("dayName", { length: 16 }).notNull(),
+  laf2026Goal: int("laf2026Goal").notNull().default(0),
+  bc2026Goal: int("bc2026Goal").notNull().default(0),
+  lafConfirmed: int("lafConfirmed").notNull().default(0),
+  bcConfirmed: int("bcConfirmed").notNull().default(0),
+  maxLafCapacity: int("maxLafCapacity").notNull().default(0),
+  maxBcCapacity: int("maxBcCapacity").notNull().default(0),
+  routesPlanned: int("routesPlanned").notNull().default(0),
+  routesConfirmed: int("routesConfirmed").notNull().default(0),
+  revenue: decimal("revenue", { precision: 12, scale: 2 }).notNull().default("0"),
+  driverPay: decimal("driverPay", { precision: 12, scale: 2 }).notNull().default("0"),
+});
+
+export type ForecastSnapshot = typeof forecastSnapshots.$inferSelect;
+export type InsertForecastSnapshot = typeof forecastSnapshots.$inferInsert;
+
+// Wodely Task Cache: per-task fees pulled from Wodely sync
+export const wodelyTaskCache = mysqlTable("wodely_task_cache", {
+  id: int("id").autoincrement().primaryKey(),
+  wodelyTaskId: varchar("wodelyTaskId", { length: 64 }).notNull().unique(),
+  merchant: mysqlEnum("merchant", ["LAF", "BC"]).notNull(),
+  deliveryDate: date("deliveryDate").notNull(),
+  zoneId: int("zoneId"),
+  taskFee: decimal("taskFee", { precision: 8, scale: 2 }).notNull().default("0"),
+  raw: text("raw"),
+  syncedAt: timestamp("syncedAt").defaultNow().notNull(),
+});
+
+export type WodelyTaskCache = typeof wodelyTaskCache.$inferSelect;
+export type InsertWodelyTaskCache = typeof wodelyTaskCache.$inferInsert;
+

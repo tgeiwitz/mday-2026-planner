@@ -12,6 +12,7 @@ import Timeblocks from "./pages/Timeblocks";
 import Routes from "./pages/Routes";
 import Scenarios from "./pages/Scenarios";
 import Settings from "./pages/Settings";
+import Snapshots from "./pages/Snapshots";
 
 function Router() {
   return (
@@ -23,6 +24,7 @@ function Router() {
       <Route path="/routes" component={Routes} />
       <Route path="/scenarios" component={Scenarios} />
       <Route path="/settings" component={Settings} />
+      <Route path="/snapshots" component={Snapshots} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>
