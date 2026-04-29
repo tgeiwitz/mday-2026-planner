@@ -198,6 +198,11 @@ export async function updateRoute(id: number, data: Partial<typeof routes.$infer
   const db = await getDb();
   if (!db) return;
   await db.update(routes).set(data).where(eq(routes.id, id));
+  // Auto-recalc whenever any input that drives route economics changes.
+  const triggerKeys = ["stops", "driverId", "status", "payFloorOverride", "payMaxOverride", "holidayPerStopSurcharge", "driverBonus"];
+  if (triggerKeys.some((k) => k in data)) {
+    await recalculateAllRoutes();
+  }
 }
 
 export async function createRoute(data: typeof routes.$inferInsert) {
@@ -221,6 +226,8 @@ export async function setRouteZones(routeId: number, zones: { zoneId: number; ta
   if (zones.length > 0) {
     await db.insert(routeZones).values(zones.map((z) => ({ routeId, ...z })));
   }
+  // Auto-recalc so duration/mileage/fee reflect new zone assignments immediately.
+  await recalculateAllRoutes();
 }
 
 // ---------- Global Settings ----------
@@ -311,6 +318,10 @@ export async function recalculateAllRoutes() {
   const allTimeblocks = await db.select().from(timeblocks);
   const tbMap = new Map(allTimeblocks.map((t) => [t.id, t]));
 
+  // Driver time-per-stop differentials (extra minutes per stop for New drivers etc)
+  const allDrivers = await db.select().from(drivers);
+  const driverMap = new Map(allDrivers.map((d) => [d.id, d]));
+
   // Wodely per-task fees by (merchant|YYYY-MM-DD)
   const wodelyFees = await getWodelyFeeMap();
 
@@ -318,13 +329,28 @@ export async function recalculateAllRoutes() {
     const zs = zonesByRoute.get(r.id) ?? [];
     let baselineFee = 0;
     let miles = 0;
+    let travelMinutes = 0;
+    let zoneStops = 0;
     for (const z of zs) {
       const zm = zoneMap.get(z.zoneId);
       if (!zm) continue;
       const taskFee = r.merchant === "LAF" ? parseFloat(String(zm.lafFee2026)) : parseFloat(String(zm.bcFee2026));
       baselineFee += taskFee * z.taskCount;
       miles += parseFloat(String(zm.distance2026)) * z.taskCount;
+      travelMinutes += parseFloat(String(zm.travelTime2026)) * z.taskCount;
+      zoneStops += z.taskCount;
     }
+
+    // Duration: per-zone travel time + driver differential per stop.
+    // If zones don't cover all stops, fall back to average zone travel time for the remainder.
+    const driver = r.driverId ? driverMap.get(r.driverId) : null;
+    const driverDiff = driver ? parseFloat(String(driver.timePerStopDiff ?? 0)) : 0;
+    let estDurationMin = travelMinutes;
+    if (zoneStops < r.stops) {
+      const avgTravel = zoneStops > 0 ? travelMinutes / zoneStops : 8; // 8 min fallback if no zones assigned
+      estDurationMin += avgTravel * (r.stops - zoneStops);
+    }
+    estDurationMin += driverDiff * r.stops;
 
     // Resolve confirmed fees from Wodely for this route's date + merchant
     const tbForDate = tbMap.get(r.timeblockId);
@@ -387,6 +413,7 @@ export async function recalculateAllRoutes() {
         estMileagePay: mileagePay.toFixed(2),
         estPlatformFee: platformFee.toFixed(2),
         estMileage: miles.toFixed(2),
+        estDuration: Math.round(estDurationMin),
         feeMode,
       })
       .where(eq(routes.id, r.id));

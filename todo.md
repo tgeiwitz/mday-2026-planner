@@ -76,3 +76,8 @@
 - [ ] Routed stage UI: dispatch enters planned mileage/duration; driver approval toggle
 - [ ] Completed stage UI: enter actuals; calc variance
 - [ ] Variance Analysis page: forecast vs planned vs actual
+
+## v7 Dashboard rework (complete)
+- [x] Dashboard columns: Date(2026), Day, Phase, LAF 2025 Actual, BC 2025 Actual, Total 2025, LAF 2026 Goal, BC 2026 Estimate, Total 2026 Goal, Max LAF, Max BC
+- [x] Inline edit LAF 2026 Goal and BC 2026 Estimate
+- [x] Zone editor UI on Routes page with auto-recalc of duration/mileage/fee

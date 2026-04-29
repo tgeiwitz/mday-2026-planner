@@ -41,8 +41,41 @@ export default function Routes() {
   const { data: routes = [], refetch } = trpc.routes.list.useQuery();
   const { data: timeblocks = [] } = trpc.timeblocks.list.useQuery();
   const { data: drivers = [] } = trpc.drivers.list.useQuery();
-  const { data: routeZones = [] } = trpc.routes.listZones.useQuery();
+  const { data: routeZones = [], refetch: refetchZones } = trpc.routes.listZones.useQuery();
+  const { data: allZones = [] } = trpc.zones.list.useQuery();
   const update = trpc.routes.update.useMutation({ onSuccess: () => refetch() });
+  const setZones = trpc.routes.setZones.useMutation({
+    onSuccess: () => {
+      refetch();
+      refetchZones();
+    },
+  });
+  const [zoneDrafts, setZoneDrafts] = useState<Record<number, Record<number, number>>>({});
+
+  function getDraft(routeId: number, existing: { zoneId: number; taskCount: number }[]) {
+    if (zoneDrafts[routeId]) return zoneDrafts[routeId];
+    const d: Record<number, number> = {};
+    for (const z of existing) d[z.zoneId] = z.taskCount;
+    return d;
+  }
+  function updateDraft(routeId: number, zoneId: number, count: number, existing: { zoneId: number; taskCount: number }[]) {
+    const base = getDraft(routeId, existing);
+    const next = { ...base, [zoneId]: count };
+    if (count <= 0) delete next[zoneId];
+    setZoneDrafts((prev) => ({ ...prev, [routeId]: next }));
+  }
+  function saveZones(routeId: number, existing: { zoneId: number; taskCount: number }[]) {
+    const draft = getDraft(routeId, existing);
+    const zones = Object.entries(draft)
+      .filter(([, cnt]) => (cnt as number) > 0)
+      .map(([zid, cnt]) => ({ zoneId: Number(zid), taskCount: Number(cnt) }));
+    setZones.mutate({ routeId, zones });
+    setZoneDrafts((prev) => {
+      const copy = { ...prev };
+      delete copy[routeId];
+      return copy;
+    });
+  }
 
   const [filter, setFilter] = useState<string>("all");
   const [merchantFilter, setMerchantFilter] = useState<string>("all");
@@ -253,32 +286,56 @@ export default function Routes() {
                             <tr>
                               <td colSpan={16} className="!p-0 bg-muted/20">
                                 <div className="px-12 py-4">
-                                  <div className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
-                                    Zone Breakdown
+                                  <div className="flex items-center justify-between mb-3">
+                                    <div className="text-xs uppercase tracking-wider text-muted-foreground">
+                                      Zone Assignment
+                                    </div>
+                                    <div className="flex items-center gap-3 text-xs">
+                                      <span className="text-muted-foreground">
+                                        Draft total:{' '}
+                                        <span className="font-semibold text-foreground num-cell">
+                                          {Object.values(getDraft(r.id, zs)).reduce((s, n) => s + (n || 0), 0)}
+                                        </span>{' '}
+                                        / Stops <span className="font-semibold text-foreground num-cell">{r.stops}</span>
+                                      </span>
+                                      <button
+                                        type="button"
+                                        className="text-xs px-3 py-1 rounded-md border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50"
+                                        disabled={!zoneDrafts[r.id] || setZones.isPending}
+                                        onClick={() => saveZones(r.id, zs)}
+                                      >
+                                        Save zones
+                                      </button>
+                                    </div>
                                   </div>
-                                  <table className="w-full text-xs">
-                                    <thead>
-                                      <tr className="text-muted-foreground">
-                                        <th className="text-left font-medium py-1">Zone</th>
-                                        <th className="text-right font-medium py-1">Tasks</th>
-                                        <th className="text-right font-medium py-1">% of Route</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {zs.map((z) => {
-                                        const total = zs.reduce((s, x) => s + x.taskCount, 0) || 1;
-                                        return (
-                                          <tr key={z.id} className="border-t border-border/40">
-                                            <td className="font-mono py-1">{z.zoneId}</td>
-                                            <td className="text-right num-cell py-1">{z.taskCount}</td>
-                                            <td className="text-right num-cell py-1">
-                                              {((z.taskCount / total) * 100).toFixed(0)}%
-                                            </td>
-                                          </tr>
-                                        );
-                                      })}
-                                    </tbody>
-                                  </table>
+                                  <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-x-4 gap-y-1.5">
+                                    {allZones.map((zm) => {
+                                      const draft = getDraft(r.id, zs);
+                                      const cnt = draft[zm.id] ?? 0;
+                                      const pct = r.stops > 0 ? (cnt / r.stops) * 100 : 0;
+                                      return (
+                                        <div key={zm.id} className="flex items-center gap-2 text-xs">
+                                          <span className="font-mono text-muted-foreground w-28 truncate" title={zm.zoneName ?? undefined}>
+                                            {zm.zoneName}
+                                          </span>
+                                          <Input
+                                            type="number"
+                                            min={0}
+                                            value={cnt || ''}
+                                            onChange={(e) => updateDraft(r.id, zm.id, parseInt(e.target.value || '0', 10) || 0, zs)}
+                                            className="h-7 w-16 text-xs num-cell"
+                                            placeholder="0"
+                                          />
+                                          <span className="text-muted-foreground num-cell w-8 text-right">
+                                            {cnt > 0 ? `${pct.toFixed(0)}%` : ''}
+                                          </span>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                  <div className="mt-3 text-[11px] text-muted-foreground">
+                                    Edit task counts per zone above and click Save zones. Duration, mileage, and fee will auto-recalculate based on the zone baselines.
+                                  </div>
                                   {tb && (
                                     <div className="mt-3 text-xs text-muted-foreground flex gap-4">
                                       <span>Pickup LAF: <span className="font-mono">{tb.lafPickupTime ?? "—"}</span></span>
