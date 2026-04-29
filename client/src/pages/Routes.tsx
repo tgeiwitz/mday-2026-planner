@@ -160,7 +160,7 @@ export default function Routes() {
                   </div>
                 </div>
               </div>
-              <div className="overflow-x-auto">
+              <div className="table-scroll">
                 <table className="elegant-table">
                   <thead>
                     <tr>
@@ -202,7 +202,7 @@ export default function Routes() {
                                 )}
                               </button>
                             </td>
-                            <td className="font-mono font-medium">{r.routeCode}</td>
+                            <td className="font-mono font-medium sticky-col">{r.routeCode}</td>
                             <td className="text-xs text-muted-foreground">{tb?.wave}</td>
                             <td>
                               <Badge className={r.merchant === "LAF" ? "bg-rose-50 text-rose-800 border border-rose-200 font-normal" : "bg-violet-50 text-violet-800 border border-violet-200 font-normal"}>

@@ -181,15 +181,43 @@
   }
 }
 @layer components {
+  .table-scroll {
+    @apply -mx-4 px-4 sm:mx-0 sm:px-0;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .table-scroll table {
+    min-width: max-content;
+  }
   .elegant-table {
     width: 100%;
     border-collapse: collapse;
+  }
+  .elegant-table thead th.sticky-col,
+  .elegant-table tbody td.sticky-col {
+    position: sticky;
+    left: 0;
+    background: var(--background);
+    z-index: 1;
+  }
+  .elegant-table tbody tr:hover td.sticky-col {
+    background: oklch(from var(--muted) l c h / 0.4);
   }
   .elegant-table thead th {
     @apply text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground py-3 px-4 border-b border-border bg-muted/40 text-left whitespace-nowrap;
   }
   .elegant-table tbody td {
     @apply py-3 px-4 border-b border-border/60 text-sm;
+  }
+  .elegant-table input,
+  .elegant-table select,
+  .elegant-table button {
+    min-height: 36px;
+  }
+  @media (max-width: 640px) {
+    .elegant-table thead th { @apply py-2 px-3 text-[10px]; }
+    .elegant-table tbody td { @apply py-2 px-3; }
+    .elegant-table input { min-height: 40px; }
   }
   .elegant-table tbody tr:hover {
     @apply bg-muted/40;

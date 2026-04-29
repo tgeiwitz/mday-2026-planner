@@ -49,11 +49,11 @@ export default function Zones() {
 
       <div className="container py-8">
         <Card className="border-border/60 overflow-hidden">
-          <div className="overflow-x-auto">
+          <div className="table-scroll">
             <table className="elegant-table">
               <thead>
                 <tr>
-                  <th rowSpan={2} className="align-bottom">Zone</th>
+                  <th rowSpan={2} className="align-bottom sticky-col">Zone</th>
                   <th colSpan={3} className="text-center border-r border-border/60">Travel Time (sec/task)</th>
                   <th colSpan={3} className="text-center border-r border-border/60">Distance (mi/stop)</th>
                   <th colSpan={3} className="text-center border-r border-border/60">LAF Task Fee</th>
@@ -79,7 +79,7 @@ export default function Zones() {
                   const e = edits[z.id] || {};
                   return (
                     <tr key={z.id}>
-                      <td className="font-medium font-mono">{z.zoneId}</td>
+                      <td className="font-medium font-mono sticky-col">{z.zoneId}</td>
                       <td className="num-cell text-muted-foreground">{Number(z.travelTimeLastYear).toFixed(1)}</td>
                       <td className="num-cell text-muted-foreground">{Number(z.travelTime60Day).toFixed(1)}</td>
                       <td className="!py-1 !px-2 border-r border-border/60 bg-primary/5">

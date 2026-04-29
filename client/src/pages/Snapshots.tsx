@@ -240,10 +240,11 @@ export default function Snapshots() {
               </Badge>
             )}
           </div>
+          <div className="table-scroll">
           <table className="elegant-table">
             <thead>
               <tr>
-                <th>Date</th>
+                <th className="sticky-col">Date</th>
                 <th className="text-right">LAF Goal</th>
                 <th className="text-right">BC Goal</th>
                 <th className="text-right">LAF Conf.</th>
@@ -263,7 +264,7 @@ export default function Snapshots() {
                 const prev = compareMap.get(k);
                 return (
                   <tr key={r.id}>
-                    <td className="whitespace-nowrap font-medium">{fmtDate(r.forecastDate)}</td>
+                    <td className="whitespace-nowrap font-medium sticky-col">{fmtDate(r.forecastDate)}</td>
                     <td className="num-cell">
                       {r.laf2026Goal}
                       {prev && (
@@ -340,6 +341,7 @@ export default function Snapshots() {
               )}
             </tbody>
           </table>
+          </div>
         </Card>
       </div>
     </div>

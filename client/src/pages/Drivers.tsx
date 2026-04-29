@@ -137,6 +137,7 @@ export default function Drivers() {
 
       <div className="container py-8">
         <Card className="border-border/60 overflow-hidden">
+          <div className="table-scroll">
           <table className="elegant-table">
             <thead>
               <tr>
@@ -204,6 +205,7 @@ export default function Drivers() {
               ))}
             </tbody>
           </table>
+          </div>
         </Card>
       </div>
     </div>

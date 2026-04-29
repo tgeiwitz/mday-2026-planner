@@ -228,10 +228,11 @@ export default function Scenarios() {
                   Capacity utilization shown as tasks / max capacity. Live confirmed orders from Wodely shown separately.
                 </p>
               </div>
+              <div className="table-scroll">
               <table className="elegant-table">
                 <thead>
                   <tr>
-                    <th>Date</th>
+                    <th className="sticky-col">Date</th>
                     <th className="text-right">Routes</th>
                     <th className="text-right">Tasks</th>
                     <th className="text-right">LAF Conf.</th>
@@ -254,7 +255,7 @@ export default function Scenarios() {
                     });
                     return (
                       <tr key={r.date}>
-                        <td className="whitespace-nowrap font-medium">{fmtDate(r.date)}</td>
+                        <td className="whitespace-nowrap font-medium sticky-col">{fmtDate(r.date)}</td>
                         <td className="num-cell">{r.routes}</td>
                         <td className="num-cell">{r.tasks}</td>
                         <td className="num-cell text-emerald-700">{fRow?.lafConfirmed ?? 0}</td>
@@ -276,6 +277,7 @@ export default function Scenarios() {
                   })}
                 </tbody>
               </table>
+              </div>
             </Card>
           </TabsContent>
         </Tabs>

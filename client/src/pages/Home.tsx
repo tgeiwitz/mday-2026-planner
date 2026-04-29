@@ -198,11 +198,11 @@ export default function Home() {
               Date · Day · SOP · 2025 actuals · 2026 goals (editable) · Max capacity. SOP auto-derived: under 30 Standard, 30-99 High Volume, 100+ Exception.
             </p>
           </div>
-          <div className="overflow-x-auto">
+          <div className="table-scroll">
             <table className="elegant-table">
               <thead>
                 <tr>
-                  <th>Date (2026)</th>
+                  <th className="sticky-col">Date (2026)</th>
                   <th>Day</th>
                   <th>SOP</th>
                   <th className="text-right">LAF 2025 Actual</th>
@@ -247,7 +247,7 @@ export default function Home() {
                   const pctRoutesAssigned = stats.total > 0 ? (stats.assigned / stats.total) * 100 : null;
                   return (
                     <tr key={f.id}>
-                      <td className="whitespace-nowrap font-medium">{formatDate(f.forecastDate)}</td>
+                      <td className="whitespace-nowrap font-medium sticky-col">{formatDate(f.forecastDate)}</td>
                       <td className="text-muted-foreground">{dayName(f.forecastDate)}</td>
                       <td>
                         {(() => {

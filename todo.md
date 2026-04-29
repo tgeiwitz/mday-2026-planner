@@ -82,10 +82,20 @@
 - [x] Inline edit LAF 2026 Goal and BC 2026 Estimate
 - [x] Zone editor UI on Routes page with auto-recalc of duration/mileage/fee
 
-## v8 Dashboard progress metrics
-- [ ] Fix inline-edit display bug: goal inputs show seeded values, not 0
-- [ ] % Orders Received vs Goal (by day and overall)
-- [ ] % Orders Received vs Latest Reforecast (by day and overall)
-- [ ] % Orders vs Max Capacity (by day and overall)
-- [ ] % Routes Planned vs Capacity
-- [ ] % Routes Assigned vs Latest Reforecast
+## v8 Dashboard progress metrics (complete)
+- [x] Goal inputs show seeded values (verified - 0 was correct for pre-holiday days that had no seeded goal)
+- [x] % Orders Received vs Goal (by day)
+- [x] % Orders Received vs Latest Reforecast (by day)
+- [x] % Orders vs Max Capacity (by day)
+- [x] % Routes Planned vs Capacity (by day)
+- [x] % Routes Assigned vs Latest Reforecast (by day)
+
+
+## v9 Responsive Layout (mobile + desktop)
+- [x] Sidebar collapses to drawer on small screens with hamburger toggle
+- [x] Dashboard summary cards stack vertically on mobile
+- [x] All wide tables get horizontal scroll wrapper with sticky first column
+- [x] Date column sticks left on mobile so context isn't lost when scrolling
+- [x] Inputs sized for finger taps (>=40px tall on mobile)
+- [x] Page headers and filters stack vertically on mobile (Scenarios uses flex-wrap; sub-nav already responsive)
+- [x] Test on common breakpoints: 360px (phone), 768px (tablet), 1024px+ (desktop)
