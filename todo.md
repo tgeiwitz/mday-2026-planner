@@ -117,3 +117,13 @@
 - [ ] Order Capacity column (deferred)
 - [ ] "Copy Merchant Update" blurb button (deferred)
 - [ ] Anchor Dashboard to today by default (deferred)
+
+## v12 Capacity Model (pre-planning bandwidth) DONE
+- [x] Planning endpoint returns LAF/BC/Total Route Capacity (sum of placeholder route stops)
+- [x] Planning endpoint returns LAF/BC/Total Confirmed Capacity (stops on routes whose driver has status=Confirmed)
+- [x] Planning endpoint returns Room to Fill = Capacity − Confirmed Orders per merchant
+- [x] Planning endpoint returns Need Drivers = Confirmed Orders − Confirmed Capacity per merchant
+- [x] Dashboard PlanningPanel shows LAF/BC/Total Route Capacity and Confirmed Capacity columns
+- [x] Dashboard PlanningPanel shows two gap columns: Room to Fill and Need Drivers
+- [x] Routes page: inline-editable stops per route with live recalc on blur (already existed)
+- [x] 9/9 vitest tests pass with new planning shape

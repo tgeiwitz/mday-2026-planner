@@ -30,16 +30,23 @@ const STATUSES = ["Budgeted", "Planned", "Confirmed", "Processed", "Routed", "Co
 import { fmtDate, toISODate } from "@/lib/date";
 
 export default function Routes() {
+  const utils = trpc.useUtils();
   const { data: routes = [], refetch } = trpc.routes.list.useQuery();
   const { data: timeblocks = [] } = trpc.timeblocks.list.useQuery();
   const { data: drivers = [] } = trpc.drivers.list.useQuery();
   const { data: routeZones = [], refetch: refetchZones } = trpc.routes.listZones.useQuery();
   const { data: allZones = [] } = trpc.zones.list.useQuery();
-  const update = trpc.routes.update.useMutation({ onSuccess: () => refetch() });
+  const update = trpc.routes.update.useMutation({
+    onSuccess: () => {
+      refetch();
+      utils.planning.list.invalidate();
+    },
+  });
   const setZones = trpc.routes.setZones.useMutation({
     onSuccess: () => {
       refetch();
       refetchZones();
+      utils.planning.list.invalidate();
     },
   });
   const [zoneDrafts, setZoneDrafts] = useState<Record<number, Record<number, number>>>({});

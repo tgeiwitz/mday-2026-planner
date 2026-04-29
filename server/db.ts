@@ -761,14 +761,19 @@ export async function getPlanningView() {
   const db = await getDb();
   if (!db) return [];
 
-  const [forecastRows, historicalRows, routeRows, zoneRows, driverTbRows, tbRows] = await Promise.all([
+  const [forecastRows, historicalRows, routeRows, zoneRows, driverTbRows, tbRows, driverRows] = await Promise.all([
     db.select().from(dailyForecast).orderBy(asc(dailyForecast.forecastDate)),
     db.select().from(historicalDaily2025),
     db.select().from(routes),
     db.select().from(zoneMetrics),
     db.select().from(driverTimeblocks),
     db.select().from(timeblocks),
+    db.select().from(drivers),
   ]);
+
+  // Driver status lookup
+  const driverStatusById = new Map<number, string>();
+  for (const d of driverRows) driverStatusById.set(d.id, d.status);
 
   // Zone lookup (business zoneId -> metrics).
   const zoneById = new Map<number, typeof zoneRows[number]>();
@@ -839,6 +844,16 @@ export async function getPlanningView() {
     const lafRoutes = dayRoutes.filter((r) => r.merchant === "LAF").length;
     const bcRoutes = dayRoutes.filter((r) => r.merchant === "BC").length;
     const assignedRoutes = dayRoutes.filter((r) => r.driverId != null).length;
+    // Route Capacity = sum of stops across all placeholder routes for the day.
+    const lafRouteCapacity = dayRoutes.filter((r) => r.merchant === "LAF").reduce((s, r) => s + (r.stops || 0), 0);
+    const bcRouteCapacity = dayRoutes.filter((r) => r.merchant === "BC").reduce((s, r) => s + (r.stops || 0), 0);
+    // Confirmed Capacity = stops on routes whose assigned driver has status=Confirmed.
+    const confirmedRoutes = dayRoutes.filter((r) => {
+      if (r.driverId == null) return false;
+      return driverStatusById.get(r.driverId) === "Confirmed";
+    });
+    const lafConfirmedCapacity = confirmedRoutes.filter((r) => r.merchant === "LAF").reduce((s, r) => s + (r.stops || 0), 0);
+    const bcConfirmedCapacity = confirmedRoutes.filter((r) => r.merchant === "BC").reduce((s, r) => s + (r.stops || 0), 0);
     const lafGoal = Number(f.laf2026Goal) || 0;
     const bcEstimate = Number(f.bc2026Goal) || 0;
     const lafConfirmed = Number(f.lafConfirmed) || 0;
@@ -878,6 +893,21 @@ export async function getPlanningView() {
       lafCapacity,
       bcCapacity,
       capacityTotal: lafCapacity + bcCapacity,
+      // Route Capacity (placeholder routes — total seats available)
+      lafRouteCapacity,
+      bcRouteCapacity,
+      totalRouteCapacity: lafRouteCapacity + bcRouteCapacity,
+      // Confirmed Capacity (routes whose driver has status=Confirmed)
+      lafConfirmedCapacity,
+      bcConfirmedCapacity,
+      totalConfirmedCapacity: lafConfirmedCapacity + bcConfirmedCapacity,
+      // Two-gap math
+      lafRoomToFill: lafRouteCapacity - lafConfirmed,
+      bcRoomToFill: bcRouteCapacity - bcConfirmed,
+      totalRoomToFill: (lafRouteCapacity + bcRouteCapacity) - (lafConfirmed + bcConfirmed),
+      lafNeedDrivers: Math.max(0, lafConfirmed - lafConfirmedCapacity),
+      bcNeedDrivers: Math.max(0, bcConfirmed - bcConfirmedCapacity),
+      totalNeedDrivers: Math.max(0, (lafConfirmed + bcConfirmed) - (lafConfirmedCapacity + bcConfirmedCapacity)),
       // Existing operational counts
       lafRoutesPlanned: lafRoutes,
       bcRoutesPlanned: bcRoutes,

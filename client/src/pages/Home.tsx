@@ -37,24 +37,33 @@ type PlanningRow = {
   bcEstimate: number;
   lafHistorical: number;
   bcHistorical: number;
-  historicalDate: string | null;
   lafConfirmed: number;
   bcConfirmed: number;
-  lafRoutesNeeded: number;
-  bcRoutesNeeded: number;
-  routesNeeded: number;
-  driversNeeded: number;
+  lafRouteCapacity: number;
+  bcRouteCapacity: number;
+  totalRouteCapacity: number;
+  lafConfirmedCapacity: number;
+  bcConfirmedCapacity: number;
+  totalConfirmedCapacity: number;
+  lafRoomToFill: number;
+  bcRoomToFill: number;
+  totalRoomToFill: number;
+  lafNeedDrivers: number;
+  bcNeedDrivers: number;
+  totalNeedDrivers: number;
   driversConfirmed: number;
-  lafCapacity: number;
-  bcCapacity: number;
-  capacityTotal: number;
-  lafRoutesPlanned: number;
-  bcRoutesPlanned: number;
-  routesPlanned: number;
-  routesAssigned: number;
-  lafGapToGoal: number;
-  bcGapToGoal: number;
 };
+
+function gapCell(n: number, type: "room" | "need") {
+  if (n === 0) {
+    return <span className="text-muted-foreground">—</span>;
+  }
+  if (type === "room") {
+    if (n > 0) return <span className="text-emerald-700 tabular-nums">+{n}</span>;
+    return <span className="text-destructive tabular-nums">{n}</span>;
+  }
+  return <span className="text-amber-700 tabular-nums">{n}</span>;
+}
 
 function PlanningPanel() {
   const { data: rows = [], isLoading } = trpc.planning.list.useQuery();
@@ -63,69 +72,89 @@ function PlanningPanel() {
       <div className="px-6 py-4 border-b border-border/60 bg-muted/20">
         <h2 className="font-serif text-xl">Daily Planning</h2>
         <p className="text-xs text-muted-foreground mt-1">
-          Budget (2026 Goal) · 2025 Actual for equivalent day-before-M-Day · Confirmed (Wodely) · Zone-adjusted Routes & Drivers needed. Days-before-M-Day matches 2025 ↔ 2026 so day-of-week aligns.
+          Budget (2026 Goal) · 2025 Actual for the equivalent day-before-Mother's-Day · Confirmed (Wodely) · Route Capacity (stops across placeholder routes) vs Confirmed Capacity (routes with a driver whose status = Confirmed). Room to Fill = capacity minus orders landed; Need Drivers = orders minus confirmed capacity.
         </p>
       </div>
       <div className="table-scroll">
         <table className="elegant-table">
           <thead>
             <tr>
-              <th className="sticky-col">Date</th>
-              <th>D-Day</th>
-              <th className="text-right">LAF Budget</th>
-              <th className="text-right">BC Budget</th>
-              <th className="text-right border-r border-border/60">Total Budget</th>
-              <th className="text-right">LAF 2025</th>
-              <th className="text-right">BC 2025</th>
-              <th className="text-right border-r border-border/60">Total 2025</th>
-              <th className="text-right">LAF Confirmed</th>
-              <th className="text-right">BC Confirmed</th>
-              <th className="text-right border-r border-border/60">% to Goal</th>
-              <th className="text-right">LAF Routes</th>
-              <th className="text-right">BC Routes</th>
-              <th className="text-right border-r border-border/60">Drivers Needed</th>
-              <th className="text-right">Drivers Confirmed</th>
-              <th>Status</th>
+              <th className="sticky-col" rowSpan={2}>Date</th>
+              <th rowSpan={2}>D-Day</th>
+              <th className="text-center border-r border-border/60" colSpan={3}>2026 Budget</th>
+              <th className="text-center border-r border-border/60" colSpan={3}>2025 Actual</th>
+              <th className="text-center border-r border-border/60" colSpan={3}>Confirmed (Wodely)</th>
+              <th className="text-center border-r border-border/60" colSpan={3}>Route Capacity</th>
+              <th className="text-center border-r border-border/60" colSpan={3}>Confirmed Capacity</th>
+              <th className="text-center border-r border-border/60" colSpan={3}>Room to Fill</th>
+              <th className="text-center" colSpan={3}>Need Drivers</th>
+            </tr>
+            <tr>
+              <th className="text-right">LAF</th>
+              <th className="text-right">BC</th>
+              <th className="text-right border-r border-border/60">Total</th>
+              <th className="text-right">LAF</th>
+              <th className="text-right">BC</th>
+              <th className="text-right border-r border-border/60">Total</th>
+              <th className="text-right">LAF</th>
+              <th className="text-right">BC</th>
+              <th className="text-right border-r border-border/60">Total</th>
+              <th className="text-right">LAF</th>
+              <th className="text-right">BC</th>
+              <th className="text-right border-r border-border/60">Total</th>
+              <th className="text-right">LAF</th>
+              <th className="text-right">BC</th>
+              <th className="text-right border-r border-border/60">Total</th>
+              <th className="text-right">LAF</th>
+              <th className="text-right">BC</th>
+              <th className="text-right border-r border-border/60">Total</th>
+              <th className="text-right">LAF</th>
+              <th className="text-right">BC</th>
+              <th className="text-right">Total</th>
             </tr>
           </thead>
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={16} className="text-center text-muted-foreground py-8">Loading…</td>
+                <td colSpan={23} className="text-center text-muted-foreground py-8">Loading…</td>
               </tr>
             )}
             {(rows as PlanningRow[]).map((r) => {
               const totalBudget = r.lafGoal + r.bcEstimate;
               const total2025 = r.lafHistorical + r.bcHistorical;
               const totalConfirmed = r.lafConfirmed + r.bcConfirmed;
-              const pctGoal = totalBudget > 0 ? (totalConfirmed / totalBudget) * 100 : null;
-              let statusLabel = "—";
-              let statusCls = "text-muted-foreground";
-              if (pctGoal !== null) {
-                if (pctGoal >= 100) { statusLabel = "At Goal"; statusCls = "text-emerald-600"; }
-                else if (pctGoal >= 85) { statusLabel = "On Track"; statusCls = "text-emerald-600"; }
-                else if (pctGoal >= 50) { statusLabel = "Ramping"; statusCls = "text-amber-600"; }
-                else if (pctGoal > 0) { statusLabel = "Behind"; statusCls = "text-destructive"; }
-                else { statusLabel = "Pending"; statusCls = "text-muted-foreground"; }
-              }
               return (
                 <tr key={r.forecastDate}>
                   <td className="sticky-col font-medium">{fmtDateShort(r.forecastDate)}<div className="text-[10px] text-muted-foreground">{dayName(r.forecastDate)}</div></td>
                   <td className="tabular-nums">{r.daysBeforeMday >= 0 ? `${r.daysBeforeMday}d` : `M+${-r.daysBeforeMday}`}</td>
+                  {/* 2026 Budget */}
                   <td className="text-right tabular-nums">{r.lafGoal}</td>
                   <td className="text-right tabular-nums">{r.bcEstimate}</td>
                   <td className="text-right tabular-nums font-medium border-r border-border/60">{totalBudget}</td>
+                  {/* 2025 Actual */}
                   <td className="text-right tabular-nums text-muted-foreground">{r.lafHistorical}</td>
                   <td className="text-right tabular-nums text-muted-foreground">{r.bcHistorical}</td>
                   <td className="text-right tabular-nums text-muted-foreground border-r border-border/60">{total2025}</td>
+                  {/* Confirmed */}
                   <td className="text-right tabular-nums">{r.lafConfirmed}</td>
                   <td className="text-right tabular-nums">{r.bcConfirmed}</td>
-                  <td className="text-right tabular-nums border-r border-border/60">{pctBadge(pctGoal)}</td>
-                  <td className="text-right tabular-nums">{r.lafRoutesNeeded}</td>
-                  <td className="text-right tabular-nums">{r.bcRoutesNeeded}</td>
-                  <td className="text-right tabular-nums font-medium border-r border-border/60">{r.driversNeeded}</td>
-                  <td className="text-right tabular-nums">{r.driversConfirmed}</td>
-                  <td className={`text-xs font-medium ${statusCls}`}>{statusLabel}</td>
+                  <td className="text-right tabular-nums font-medium border-r border-border/60">{totalConfirmed}</td>
+                  {/* Route Capacity */}
+                  <td className="text-right tabular-nums">{r.lafRouteCapacity}</td>
+                  <td className="text-right tabular-nums">{r.bcRouteCapacity}</td>
+                  <td className="text-right tabular-nums font-medium border-r border-border/60">{r.totalRouteCapacity}</td>
+                  {/* Confirmed Capacity */}
+                  <td className="text-right tabular-nums">{r.lafConfirmedCapacity}</td>
+                  <td className="text-right tabular-nums">{r.bcConfirmedCapacity}</td>
+                  <td className="text-right tabular-nums font-medium border-r border-border/60">{r.totalConfirmedCapacity}</td>
+                  {/* Room to Fill */}
+                  <td className="text-right">{gapCell(r.lafRoomToFill, "room")}</td>
+                  <td className="text-right">{gapCell(r.bcRoomToFill, "room")}</td>
+                  <td className="text-right font-medium border-r border-border/60">{gapCell(r.totalRoomToFill, "room")}</td>
+                  {/* Need Drivers */}
+                  <td className="text-right">{gapCell(r.lafNeedDrivers, "need")}</td>
+                  <td className="text-right">{gapCell(r.bcNeedDrivers, "need")}</td>
+                  <td className="text-right font-medium">{gapCell(r.totalNeedDrivers, "need")}</td>
                 </tr>
               );
             })}
