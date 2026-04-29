@@ -16,6 +16,8 @@ export default function Scenarios() {
   const [mode, setMode] = useState<Mode>("Budget");
   const [volumeAdj, setVolumeAdj] = useState([100]); // percentage
   const [feeAdj, setFeeAdj] = useState([100]);
+  const [showPast, setShowPast] = useState(false);
+  const todayIso = toISODate(new Date());
   const { data: routes = [] } = trpc.routes.list.useQuery();
   const { data: timeblocks = [] } = trpc.timeblocks.list.useQuery();
   const { data: forecast = [], refetch: refetchForecast } = trpc.forecast.list.useQuery();
@@ -148,6 +150,16 @@ export default function Scenarios() {
                 )}
                 Sync from Wodely
               </Button>
+              {rows.length > rows.filter((r) => r.date >= todayIso).length && (
+                <button
+                  onClick={() => setShowPast((v) => !v)}
+                  className="text-xs underline text-muted-foreground hover:text-foreground"
+                >
+                  {showPast
+                    ? "Hide past dates"
+                    : `Show ${rows.length - rows.filter((r) => r.date >= todayIso).length} earlier date${rows.length - rows.filter((r) => r.date >= todayIso).length === 1 ? "" : "s"}`}
+                </button>
+              )}
             </div>
           </div>
 
@@ -237,7 +249,7 @@ export default function Scenarios() {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((r) => {
+                  {(showPast ? rows : rows.filter((r) => r.date >= todayIso)).map((r) => {
                     const pct = r.capacity > 0 ? (r.tasks / r.capacity) * 100 : 0;
                     const fRow = forecast.find((f) => {
                       return toISODate(f.forecastDate) === r.date;

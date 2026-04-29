@@ -65,15 +65,92 @@ function gapCell(n: number, type: "room" | "need") {
   return <span className="text-amber-700 tabular-nums">{n}</span>;
 }
 
+function buildMerchantBlurb(r: PlanningRow): string {
+  const lines: string[] = [];
+  const dateLabel = fmtDateShort(r.forecastDate);
+  const budget = r.lafGoal + r.bcEstimate;
+  const confirmed = r.lafConfirmed + r.bcConfirmed;
+  const pct = budget > 0 ? Math.round((confirmed / budget) * 100) : null;
+  lines.push(
+    `${dateLabel} — LAF ${r.lafConfirmed}/${r.lafGoal}, BC ${r.bcConfirmed}/${r.bcEstimate}. ${pct !== null ? `Pacing at ${pct}% of budget.` : ""}`.trim()
+  );
+  if (r.totalRoomToFill > 0) {
+    lines.push(
+      `Room to fill: +${r.lafRoomToFill} LAF / +${r.bcRoomToFill} BC (${r.totalRoomToFill} orders total).`
+    );
+  } else if (r.totalRoomToFill < 0) {
+    lines.push(
+      `Over capacity by ${-r.totalRoomToFill} orders. Need additional routes.`
+    );
+  } else {
+    lines.push(`At capacity.`);
+  }
+  if (r.totalNeedDrivers > 0) {
+    lines.push(
+      `Driver coverage gap: need ${r.lafNeedDrivers} more LAF and ${r.bcNeedDrivers} more BC drivers to confirm.`
+    );
+  }
+  const hist = r.lafHistorical + r.bcHistorical;
+  if (hist > 0) {
+    const deltaPct = Math.round(((confirmed - hist) / hist) * 100);
+    lines.push(
+      `2025 equivalent day landed ${hist}; currently ${deltaPct >= 0 ? "+" : ""}${deltaPct}% vs last year.`
+    );
+  }
+  return lines.join(" ");
+}
+
+function CopyBlurbButton({ r }: { r: PlanningRow }) {
+  const [copied, setCopied] = useState(false);
+  const text = buildMerchantBlurb(r);
+  async function onClick() {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // clipboard unavailable — fallback to select+prompt
+      window.prompt("Merchant update (copy):", text);
+    }
+  }
+  return (
+    <button
+      onClick={onClick}
+      className="text-xs underline text-muted-foreground hover:text-foreground transition-colors"
+      title="Copy one-line status for merchant"
+    >
+      {copied ? "Copied" : "Copy"}
+    </button>
+  );
+}
+
 function PlanningPanel() {
   const { data: rows = [], isLoading } = trpc.planning.list.useQuery();
+  const [showPast, setShowPast] = useState(false);
+  const today = toISODate(new Date());
+  const filteredRows = useMemo(() => {
+    const all = rows as PlanningRow[];
+    if (showPast) return all;
+    return all.filter((r) => r.forecastDate >= today);
+  }, [rows, showPast, today]);
+  const hiddenCount = (rows as PlanningRow[]).length - filteredRows.length;
   return (
     <Card className="border-border/60 overflow-hidden mb-8">
-      <div className="px-6 py-4 border-b border-border/60 bg-muted/20">
-        <h2 className="font-serif text-xl">Daily Planning</h2>
-        <p className="text-xs text-muted-foreground mt-1">
-          Budget (2026 Goal) · 2025 Actual for the equivalent day-before-Mother's-Day · Confirmed (Wodely) · Route Capacity (stops across placeholder routes) vs Confirmed Capacity (routes with a driver whose status = Confirmed). Room to Fill = capacity minus orders landed; Need Drivers = orders minus confirmed capacity.
-        </p>
+      <div className="px-6 py-4 border-b border-border/60 bg-muted/20 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="font-serif text-xl">Daily Planning</h2>
+          <p className="text-xs text-muted-foreground mt-1 max-w-4xl">
+            Budget (2026 Goal) · 2025 Actual for the equivalent day-before-Mother's-Day · Confirmed (Wodely) · Route Capacity (stops across placeholder routes) vs Confirmed Capacity (routes with a driver whose status = Confirmed). Room to Fill = capacity minus orders landed; Need Drivers = orders minus confirmed capacity.
+          </p>
+        </div>
+        {hiddenCount > 0 && (
+          <button
+            onClick={() => setShowPast((v) => !v)}
+            className="text-xs underline text-muted-foreground hover:text-foreground shrink-0"
+          >
+            {showPast ? "Hide past dates" : `Show ${hiddenCount} earlier date${hiddenCount === 1 ? "" : "s"}`}
+          </button>
+        )}
       </div>
       <div className="table-scroll">
         <table className="elegant-table">
@@ -88,6 +165,7 @@ function PlanningPanel() {
               <th className="text-center border-r border-border/60" colSpan={3}>Confirmed Capacity</th>
               <th className="text-center border-r border-border/60" colSpan={3}>Room to Fill</th>
               <th className="text-center" colSpan={3}>Need Drivers</th>
+              <th rowSpan={2} className="text-center">Update</th>
             </tr>
             <tr>
               <th className="text-right">LAF</th>
@@ -116,10 +194,19 @@ function PlanningPanel() {
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={23} className="text-center text-muted-foreground py-8">Loading…</td>
+                <td colSpan={24} className="text-center text-muted-foreground py-8">Loading…</td>
               </tr>
             )}
-            {(rows as PlanningRow[]).map((r) => {
+            {!isLoading && filteredRows.length === 0 && (
+              <tr>
+                <td colSpan={24} className="text-center text-muted-foreground py-8">
+                  No dates in the future window. {hiddenCount > 0 && (
+                    <button onClick={() => setShowPast(true)} className="underline hover:text-foreground">Show past dates</button>
+                  )}
+                </td>
+              </tr>
+            )}
+            {filteredRows.map((r) => {
               const totalBudget = r.lafGoal + r.bcEstimate;
               const total2025 = r.lafHistorical + r.bcHistorical;
               const totalConfirmed = r.lafConfirmed + r.bcConfirmed;
@@ -155,6 +242,7 @@ function PlanningPanel() {
                   <td className="text-right">{gapCell(r.lafNeedDrivers, "need")}</td>
                   <td className="text-right">{gapCell(r.bcNeedDrivers, "need")}</td>
                   <td className="text-right font-medium">{gapCell(r.totalNeedDrivers, "need")}</td>
+                  <td className="text-right"><CopyBlurbButton r={r} /></td>
                 </tr>
               );
             })}

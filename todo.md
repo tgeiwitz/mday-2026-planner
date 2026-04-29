@@ -106,7 +106,7 @@
 - [x] Zone Metrics: travel time stored/shown in min/task; route duration calc matches
 - [x] Zone Metrics: show zone name (with code) in first column
 - [ ] Zone Metrics: Zone Distribution panel — Range A vs Range B custom date pickers, default next 7 days, LAF/BC separate columns, %-of-total per zone, Δ columns
-- [ ] Dashboard / Scenarios / Routes default view anchors to today (past days hidden by default with toggle)
+- [x] Dashboard Daily Planning, Routes, and Scenarios pages all anchor to today with "Show earlier dates" toggle
 
 ## v11 Daily Planning View (founder status + merchant update)
 - [x] Pull 2025 daily task totals per merchant from Supabase into local `historical_daily_2025` table
@@ -115,8 +115,8 @@
 - [x] Dashboard per-date PlanningPanel: 2026 Budget | 2025 Actual | Confirmed | Routes Needed | Drivers Needed | Status
 - [ ] Weight stops/route by per-zone task volume (deferred — needs zone_metrics volume columns)
 - [ ] Order Capacity column (deferred)
-- [ ] "Copy Merchant Update" blurb button (deferred)
-- [ ] Anchor Dashboard to today by default (deferred)
+- [x] "Copy Merchant Update" blurb button per date (copies one-line status)
+- [x] Anchor Dashboard to today by default (Daily Planning panel)
 
 ## v12 Capacity Model (pre-planning bandwidth) DONE
 - [x] Planning endpoint returns LAF/BC/Total Route Capacity (sum of placeholder route stops)

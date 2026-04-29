@@ -79,6 +79,8 @@ export default function Routes() {
   const [filter, setFilter] = useState<string>("all");
   const [merchantFilter, setMerchantFilter] = useState<string>("all");
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
+  const [showPast, setShowPast] = useState(false);
+  const todayIso = toISODate(new Date());
 
   const tbMap = new Map(timeblocks.map((t) => [t.id, t]));
   const driverMap = new Map(drivers.map((d) => [d.id, d]));
@@ -97,15 +99,20 @@ export default function Routes() {
     return true;
   });
 
-  // Group by date
-  const grouped = new Map<string, typeof filtered>();
+  // Group by date (sorted); optionally hide past dates.
+  const groupedAll = new Map<string, typeof filtered>();
   for (const r of filtered) {
     const tb = tbMap.get(r.timeblockId);
     if (!tb) continue;
     const key = toISODate(tb.blockDate);
-    if (!grouped.has(key)) grouped.set(key, []);
-    grouped.get(key)!.push(r);
+    if (!groupedAll.has(key)) groupedAll.set(key, []);
+    groupedAll.get(key)!.push(r);
   }
+  const sortedKeys = Array.from(groupedAll.keys()).sort();
+  const visibleKeys = showPast ? sortedKeys : sortedKeys.filter((k) => k >= todayIso);
+  const hiddenDateCount = sortedKeys.length - visibleKeys.length;
+  const grouped = new Map<string, typeof filtered>();
+  for (const k of visibleKeys) grouped.set(k, groupedAll.get(k)!);
 
   return (
     <div className="min-h-screen bg-background">
@@ -141,6 +148,14 @@ export default function Routes() {
             <div className="text-sm text-muted-foreground flex items-center">
               {filtered.length} routes
             </div>
+            {hiddenDateCount > 0 && (
+              <button
+                onClick={() => setShowPast((v) => !v)}
+                className="text-xs underline text-muted-foreground hover:text-foreground self-center"
+              >
+                {showPast ? "Hide past dates" : `Show ${hiddenDateCount} earlier date${hiddenDateCount === 1 ? "" : "s"}`}
+              </button>
+            )}
           </div>
         </div>
       </div>
