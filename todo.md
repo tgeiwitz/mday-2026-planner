@@ -49,8 +49,8 @@
 - [x] Snapshot endpoint (captureSnapshot) captures full daily forecast + key assumptions
 - [x] On-demand "Snapshot Now" button (Snapshots page)
 - [x] Snapshots page with day-over-day deltas
-- [ ] Auto-snapshot scheduled task (stretch — run once deployed)
-- [ ] Vitest coverage for snapshot endpoints (stretch)
+- [x] Auto-snapshot scheduled task (cron 7 AM ET daily, expires May 20 2026)
+- [x] Vitest coverage for snapshot endpoints (capture + list)
 
 ## v4 Zone Editor per Route DONE
 - [x] Route-row zone editor drawer on Routes page (saveZones mutation)
@@ -112,7 +112,7 @@
 - [x] Map each 2026 date to 2025 equivalent by days-before-Mother's-Day (2025 MD = May 11; 2026 MD = May 10)
 - [x] Zone-adjusted stops/route calc (equal-weighted across zones)
 - [x] Dashboard per-date PlanningPanel: 2026 Budget | 2025 Actual | Confirmed | Routes Needed | Drivers Needed | Status
-- [ ] Weight stops/route by per-zone task volume (deferred — needs zone_metrics volume columns)
+- [x] Weight stops/route by per-zone task volume (seeded from 2025 Supabase; graceful fallback to equal-weight if volume=0)
 - [x] Order Capacity columns shipped as Route Capacity + Confirmed Capacity on Daily Planning
 - [x] "Copy Merchant Update" blurb button per date (copies one-line status)
 - [x] Anchor Dashboard to today by default (Daily Planning panel)

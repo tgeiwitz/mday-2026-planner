@@ -781,21 +781,33 @@ export async function getPlanningView() {
 
   // Weighted avg stops/route per merchant (from zone baselines).
   // For each zone, tasks-per-route = targetDuration / travelTime2026 (min).
-  // Weight zones by their 2025 task volume so mix reflects reality.
+  // Weight each zone by its 2025 task volume so mix reflects reality
+  // (e.g. Chevy Chase is a much bigger share of LAF volume than downtown).
   const TARGET_LAF_MIN = 90; // Wave 1 window typical
   const TARGET_BC_MIN = 120;
-  // Equal-weighted: avg of (targetDuration / travelTime2026) across active zones.
-  // TODO: weight by actual per-zone task volume once seeded from Supabase.
-  let lafSum = 0, bcSum = 0, zoneCount = 0;
+  let lafNum = 0, lafWeight = 0, bcNum = 0, bcWeight = 0;
+  let lafFallbackSum = 0, bcFallbackSum = 0, fallbackCount = 0;
   for (const z of zoneRows) {
     const travel = Number(z.travelTime2026) || 0;
     if (travel <= 0) continue;
-    lafSum += TARGET_LAF_MIN / travel;
-    bcSum += TARGET_BC_MIN / travel;
-    zoneCount++;
+    const stopsPerRouteLaf = TARGET_LAF_MIN / travel;
+    const stopsPerRouteBc = TARGET_BC_MIN / travel;
+    const wLaf = Number(z.lafVolume2025) || 0;
+    const wBc = Number(z.bcVolume2025) || 0;
+    lafNum += stopsPerRouteLaf * wLaf;
+    lafWeight += wLaf;
+    bcNum += stopsPerRouteBc * wBc;
+    bcWeight += wBc;
+    lafFallbackSum += stopsPerRouteLaf;
+    bcFallbackSum += stopsPerRouteBc;
+    fallbackCount++;
   }
-  const avgLafStopsPerRoute = zoneCount > 0 ? lafSum / zoneCount : 10;
-  const avgBcStopsPerRoute = zoneCount > 0 ? bcSum / zoneCount : 10;
+  const avgLafStopsPerRoute = lafWeight > 0
+    ? lafNum / lafWeight
+    : (fallbackCount > 0 ? lafFallbackSum / fallbackCount : 10);
+  const avgBcStopsPerRoute = bcWeight > 0
+    ? bcNum / bcWeight
+    : (fallbackCount > 0 ? bcFallbackSum / fallbackCount : 10);
 
   const tbById = new Map<number, typeof tbRows[number]>();
   for (const tb of tbRows) tbById.set(tb.id, tb);
