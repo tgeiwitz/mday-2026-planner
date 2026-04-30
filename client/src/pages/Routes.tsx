@@ -22,6 +22,16 @@ const STATUS_COLORS: Record<string, string> = {
 };
 const STATUSES = ["Budgeted", "Planned", "Confirmed", "Processed", "Routed", "Completed"];
 
+function merchantBadgeClass(m: string): string {
+  switch (m) {
+    case "LAF": return "bg-rose-50 text-rose-800 border border-rose-200 font-normal";
+    case "BC":  return "bg-violet-50 text-violet-800 border border-violet-200 font-normal";
+    case "SMC": return "bg-emerald-50 text-emerald-800 border border-emerald-200 font-normal";
+    case "SMR": return "bg-amber-50 text-amber-800 border border-amber-200 font-normal";
+    default:    return "bg-slate-50 text-slate-700 border border-slate-200 font-normal";
+  }
+}
+
 import { fmtDate, toISODate } from "@/lib/date";
 
 export default function Routes() {
@@ -75,6 +85,7 @@ export default function Routes() {
 
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [merchantFilter, setMerchantFilter] = useState<string>("all");
+  const [bookingFilter, setBookingFilter] = useState<string>("all");
   const [driverFilter, setDriverFilter] = useState<string>("all"); // "all" | "unassigned" | driverId
   const [dateFilter, setDateFilter] = useState<string>("upcoming"); // "all" | "upcoming" | "today" | "YYYY-MM-DD"
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
@@ -115,6 +126,7 @@ export default function Routes() {
     return enriched.filter(({ r, date }) => {
       if (statusFilter !== "all" && r.status !== statusFilter) return false;
       if (merchantFilter !== "all" && r.merchant !== merchantFilter) return false;
+      if (bookingFilter !== "all" && (r as any).bookingType !== bookingFilter) return false;
       if (driverFilter === "unassigned") {
         if (r.driverId) return false;
       } else if (driverFilter !== "all") {
@@ -129,7 +141,7 @@ export default function Routes() {
       }
       return true;
     });
-  }, [enriched, statusFilter, merchantFilter, driverFilter, dateFilter, todayIso]);
+  }, [enriched, statusFilter, merchantFilter, bookingFilter, driverFilter, dateFilter, todayIso]);
 
   // Flat sort: date asc, then routeCode asc.
   const sorted = useMemo(() => {
@@ -204,6 +216,19 @@ export default function Routes() {
                   <SelectItem value="all">All Merchants</SelectItem>
                   <SelectItem value="LAF">LAF</SelectItem>
                   <SelectItem value="BC">BC</SelectItem>
+                  <SelectItem value="SMC">SMC</SelectItem>
+                  <SelectItem value="SMR">SMR</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col">
+              <label className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Booking</label>
+              <Select value={bookingFilter} onValueChange={setBookingFilter}>
+                <SelectTrigger className="w-[140px] h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Bookings</SelectItem>
+                  <SelectItem value="Direct">Direct</SelectItem>
+                  <SelectItem value="Flex">Flex</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -212,6 +237,7 @@ export default function Routes() {
               onClick={() => {
                 setStatusFilter("all");
                 setMerchantFilter("all");
+                setBookingFilter("all");
                 setDriverFilter("all");
                 setDateFilter("upcoming");
               }}
@@ -239,6 +265,7 @@ export default function Routes() {
                   <th></th>
                   <th>Date</th>
                   <th>Route</th>
+                  <th>Booking</th>
                   <th>Merchant</th>
                   <th>Driver</th>
                   <th className="text-right">Stops</th>
@@ -257,7 +284,7 @@ export default function Routes() {
               <tbody>
                 {sorted.length === 0 && (
                   <tr>
-                    <td colSpan={16} className="text-center text-muted-foreground py-10">
+                    <td colSpan={17} className="text-center text-muted-foreground py-10">
                       No routes match these filters.
                     </td>
                   </tr>
@@ -283,9 +310,38 @@ export default function Routes() {
                         <td className="text-xs whitespace-nowrap">{fmtDate(date)}</td>
                         <td className="font-mono font-medium sticky-col">{r.routeCode}</td>
                         <td>
-                          <Badge className={r.merchant === "LAF" ? "bg-rose-50 text-rose-800 border border-rose-200 font-normal" : "bg-violet-50 text-violet-800 border border-violet-200 font-normal"}>
-                            {r.merchant}
-                          </Badge>
+                          <Select
+                            value={(r as any).bookingType ?? "Direct"}
+                            onValueChange={(v) => update.mutate({ id: r.id, bookingType: v as any })}
+                          >
+                            <SelectTrigger className="h-7 w-[80px] text-xs"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Direct">Direct</SelectItem>
+                              <SelectItem value="Flex">Flex</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </td>
+                        <td>
+                          {(r as any).bookingType === "Flex" ? (
+                            <Badge className="bg-sky-50 text-sky-800 border border-sky-200 font-normal" title="Flex route: can carry mixed merchants">
+                              Flex
+                            </Badge>
+                          ) : (
+                            <Select
+                              value={r.merchant}
+                              onValueChange={(v) => update.mutate({ id: r.id, merchant: v as any })}
+                            >
+                              <SelectTrigger className="h-7 w-[80px] text-xs border-0 p-0">
+                                <Badge className={merchantBadgeClass(r.merchant)}>{r.merchant}</Badge>
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="LAF">LAF</SelectItem>
+                                <SelectItem value="BC">BC</SelectItem>
+                                <SelectItem value="SMC">SMC</SelectItem>
+                                <SelectItem value="SMR">SMR</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          )}
                         </td>
                         <td>
                           <Select
@@ -365,7 +421,7 @@ export default function Routes() {
                       </tr>
                       {isExpanded && (
                         <tr>
-                          <td colSpan={16} className="!p-0 bg-muted/20">
+                          <td colSpan={17} className="!p-0 bg-muted/20">
                             <div className="px-12 py-4">
                               <div className="flex items-center justify-between mb-3">
                                 <div className="text-xs uppercase tracking-wider text-muted-foreground">

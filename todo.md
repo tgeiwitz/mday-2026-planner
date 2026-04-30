@@ -161,3 +161,30 @@
 
 ## v16 Flex Routes (no merchant split)
 - [ ] Remove merchant as a route-separator: routes can carry both LAF and BC stops; audit routes list, filters, labels, fee calc
+
+## v17 Merchant Share Page (Mon–Sat)
+- [ ] Schema: merchant_share_tokens (token, merchant LAF|BC, label, createdAt, revokedAt)
+- [ ] Schema: merchant_weekly_forecast (merchant, date, forecastOrders, notes, updatedBy, updatedAt)
+- [ ] Public procedure: merchantShare.snapshot({token, weekOf}) returns Mon–Sat with budget, forecast, confirmed (Wodely), route capacity, remaining bandwidth, editable flag per day
+- [ ] Public procedure: merchantShare.updateForecast({token, date, forecastOrders, notes}) — only future weeks, rejects current/past
+- [ ] Admin mutation: merchantShare.createToken({merchant, label}) + revoke
+- [ ] Public page /m/:token with Mon–Sat week, prev/next week nav, read-only for current/past weeks, editable for future weeks, copy-link/share button
+- [ ] Drivers/Settings-like admin panel to generate & copy merchant share links
+- [ ] Vitest: token auth, week-of computation (Mon–Sat NY), future-only edit rule
+
+## v18 Multi-Merchant + BookingType
+- [ ] Expand merchant enum to LAF / BC / SMC / SMR (routes, routeZones, driverTimeblocks, timeblocks, wodelyTaskCache, zoneTaskHistory2025, merchantShareTokens, merchantDayNotes)
+- [ ] Add routes.bookingType ENUM('Direct','Flex') DEFAULT 'Direct'
+- [ ] Routes page: BookingType dropdown per route; when Flex, Merchant column shows mix summary (e.g. "10 LAF + 6 BC")
+- [ ] Merchant Share: SMC/SMR share pages show "ad-hoc only" notice (no budget/forecast fields)
+
+## v19 Timeblock Editor
+- [x] Fix TS errors in db.ts (add gte/lte to drizzle-orm import, normalize merchantDayNotes upsert typing)
+- [x] Backend: timeblocks.create + timeblocks.delete + timeblocks.duplicate
+- [x] UI: "New timeblock" button opens modal/form with all defaults
+- [x] UI: per-row Edit prefilled; Delete with confirm; Duplicate copies defaults to a new date
+- [x] Fields editable: blockDate, label, merchant (incl. SMC/SMR), bookingType (Direct/Flex), routeStart, availabilityStart/End, lafPickupTime, bcPickupTime, pickupDwell, minPayFloor, maxPayFloor, mileageRate, targetRoutes, estRoutePay, estDuration, bonus, notes
+
+- [x] Wipe all seeded routes + timeblocks + routeZones + driverTimeblocks (seed data caused 4-routes-today bug)
+- [ ] Route generator default: bookingType=Flex (no auto LAF/BC split)
+- [ ] Drop "wave" from UI everywhere (column stays in DB for back-compat)

@@ -1,4 +1,4 @@
-import { eq, and, asc, sql, desc } from "drizzle-orm";
+import { eq, and, asc, sql, desc, gte, lte } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser,
@@ -137,7 +137,7 @@ export async function listTimeblocks() {
   return db
     .select()
     .from(timeblocks)
-    .orderBy(asc(timeblocks.blockDate), asc(timeblocks.wave));
+    .orderBy(asc(timeblocks.blockDate), asc(timeblocks.id));
 }
 
 export async function updateTimeblock(
@@ -147,6 +147,33 @@ export async function updateTimeblock(
   const db = await getDb();
   if (!db) return;
   await db.update(timeblocks).set(data).where(eq(timeblocks.id, id));
+}
+
+export async function createTimeblock(
+  data: Partial<typeof timeblocks.$inferInsert> & { blockDate: any; label: string }
+) {
+  const db = await getDb();
+  if (!db) throw new Error("db unavailable");
+  const { dayName, availabilityStart, availabilityEnd, ...rest } = data as any;
+  const d = new Date(String(rest.blockDate));
+  const computedDay = dayName || ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getUTCDay()];
+  const [result] = await db.insert(timeblocks).values({
+    dayName: computedDay,
+    availabilityStart: availabilityStart ?? "06:00",
+    availabilityEnd: availabilityEnd ?? "20:00",
+    ...rest,
+  } as any);
+  return { id: (result as any).insertId as number };
+}
+
+export async function deleteTimeblock(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  // cascade: remove dependent rows first
+  try { await db.execute(sql`DELETE FROM route_zones WHERE routeId IN (SELECT id FROM routes WHERE timeblockId = ${id})`); } catch {}
+  try { await db.execute(sql`DELETE FROM routes WHERE timeblockId = ${id}`); } catch {}
+  try { await db.execute(sql`DELETE FROM driver_timeblocks WHERE timeblockId = ${id}`); } catch {}
+  await db.delete(timeblocks).where(eq(timeblocks.id, id));
 }
 
 // ---------- Driver Timeblocks ----------
@@ -1019,4 +1046,118 @@ export async function getZoneDistribution(startIso: string, endIso: string) {
   });
   out.sort((a, b) => (b.lafCount + b.bcCount) - (a.lafCount + a.bcCount));
   return { rows: out, totals: { laf: lafTotal, bc: bcTotal } };
+}
+
+
+// ---------- Merchant Share ----------
+import {
+  merchantShareTokens,
+  merchantDayNotes,
+} from "../drizzle/schema";
+import { randomBytes } from "node:crypto";
+
+export type MerchantCode = "LAF" | "BC" | "SMC" | "SMR";
+
+export async function listShareTokens() {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(merchantShareTokens)
+    .orderBy(asc(merchantShareTokens.createdAt));
+}
+
+export async function createShareToken(merchant: MerchantCode, label?: string) {
+  const db = await getDb();
+  if (!db) throw new Error("db unavailable");
+  const token = randomBytes(24).toString("base64url");
+  await db.insert(merchantShareTokens).values({
+    token,
+    merchant,
+    label: label || null,
+  });
+  return token;
+}
+
+export async function revokeShareToken(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(merchantShareTokens)
+    .set({ revokedAt: new Date() })
+    .where(eq(merchantShareTokens.id, id));
+}
+
+export async function getShareTokenRow(token: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const rows = await db
+    .select()
+    .from(merchantShareTokens)
+    .where(eq(merchantShareTokens.token, token))
+    .limit(1);
+  return rows[0];
+}
+
+export async function touchShareToken(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(merchantShareTokens)
+    .set({ lastUsedAt: new Date() })
+    .where(eq(merchantShareTokens.id, id));
+}
+
+export async function getMerchantDayNote(merchant: MerchantCode, isoDate: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const rows = await db
+    .select()
+    .from(merchantDayNotes)
+    .where(
+      and(
+        eq(merchantDayNotes.merchant, merchant),
+        eq(merchantDayNotes.noteDate, new Date(isoDate + "T00:00:00Z")),
+      ),
+    )
+    .limit(1);
+  return rows[0];
+}
+
+export async function upsertMerchantDayNote(
+  merchant: MerchantCode,
+  isoDate: string,
+  note: string | null,
+  updatedBy: string | null,
+) {
+  const db = await getDb();
+  if (!db) return;
+  // Use insert ... on duplicate key update (unique: merchant+noteDate)
+  await db
+    .insert(merchantDayNotes)
+    .values({
+      merchant,
+      noteDate: new Date(isoDate + "T00:00:00Z"),
+      note: note ?? null,
+      updatedBy: updatedBy ?? null,
+    } as any)
+    .onDuplicateKeyUpdate({
+      set: { note: note ?? null, updatedBy: updatedBy ?? null },
+    });
+}
+
+/** Returns { date, laf, bc, smc, smr } keyed by ISO date. */
+export async function listForecastByDateRange(startIso: string, endIso: string) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(dailyForecast)
+    .where(
+      and(
+        gte(dailyForecast.forecastDate, new Date(startIso + "T00:00:00Z")),
+        lte(dailyForecast.forecastDate, new Date(endIso + "T00:00:00Z")),
+      ),
+    )
+    .orderBy(asc(dailyForecast.forecastDate));
 }

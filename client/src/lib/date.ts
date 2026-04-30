@@ -79,3 +79,15 @@ export function isBefore(a: string, b: string): boolean {
 export function isOnOrAfter(a: string, b: string): boolean {
   return a >= b;
 }
+
+/**
+ * Returns the Monday (YYYY-MM-DD) of the week containing `iso`.
+ * Week is Mon–Sun; Mon-of-Sat returns the Monday 5 days earlier.
+ */
+export function mondayOf(iso: string): string {
+  const d = toUTCDate(iso);
+  // getUTCDay(): Sun=0, Mon=1, ... Sat=6
+  const day = d.getUTCDay();
+  const offsetToMon = day === 0 ? -6 : 1 - day;
+  return addDays(iso, offsetToMon);
+}

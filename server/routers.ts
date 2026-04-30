@@ -125,20 +125,101 @@ export const appRouter = router({
       .input(
         z.object({
           id: z.number(),
+          label: z.string().optional(),
+          blockDate: z.string().optional(),
+          merchant: z.enum(["LAF", "BC", "SMC", "SMR", "Flex"]).optional(),
+          bookingType: z.enum(["Direct", "Flex"]).optional(),
+          routeStart: z.string().nullable().optional(),
+          availabilityStart: z.string().optional(),
+          availabilityEnd: z.string().optional(),
+          lafPickupTime: z.string().nullable().optional(),
+          bcPickupTime: z.string().nullable().optional(),
+          pickupDwell: z.number().optional(),
+          targetRoutes: z.number().optional(),
+          mileageRate: z.union([z.string(), z.number()]).optional(),
           estRoutePay: z.union([z.string(), z.number()]).optional(),
           estDuration: z.number().optional(),
           bonus: z.union([z.string(), z.number()]).optional(),
           minPayFloor: z.union([z.string(), z.number()]).optional(),
           maxPayFloor: z.union([z.string(), z.number()]).optional(),
+          notes: z.string().nullable().optional(),
         })
       )
       .mutation(async ({ input }) => {
         const { id, ...rest } = input;
+        const intKeys = new Set(["estDuration", "pickupDwell", "targetRoutes"]);
+        const passthroughKeys = new Set([
+          "label", "blockDate", "merchant", "bookingType",
+          "routeStart", "availabilityStart", "availabilityEnd",
+          "lafPickupTime", "bcPickupTime", "notes",
+        ]);
         const data: Record<string, unknown> = {};
         for (const [k, v] of Object.entries(rest)) {
-          if (v !== undefined) data[k] = typeof v === "number" && k !== "estDuration" ? String(v) : v;
+          if (v === undefined) continue;
+          if (intKeys.has(k) || passthroughKeys.has(k)) {
+            data[k] = v;
+          } else {
+            data[k] = v === null ? null : String(v);
+          }
         }
         await db.updateTimeblock(id, data);
+        return { success: true };
+      }),
+    create: publicProcedure
+      .input(
+        z.object({
+          blockDate: z.string(),
+          label: z.string().optional(),
+          merchant: z.enum(["LAF", "BC", "SMC", "SMR", "Flex"]).default("Flex"),
+          bookingType: z.enum(["Direct", "Flex"]).default("Flex"),
+          routeStart: z.string().nullable().optional(),
+          availabilityStart: z.string().default("06:00"),
+          availabilityEnd: z.string().default("20:00"),
+          lafPickupTime: z.string().nullable().optional(),
+          bcPickupTime: z.string().nullable().optional(),
+          pickupDwell: z.number().default(15),
+          targetRoutes: z.number().default(1),
+          mileageRate: z.union([z.string(), z.number()]).default("0.670"),
+          estRoutePay: z.union([z.string(), z.number()]).default("0"),
+          estDuration: z.number().default(0),
+          bonus: z.union([z.string(), z.number()]).default("0"),
+          minPayFloor: z.union([z.string(), z.number()]).default("150"),
+          maxPayFloor: z.union([z.string(), z.number()]).default("250"),
+          notes: z.string().nullable().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const data: any = { ...input };
+        for (const k of ["mileageRate", "estRoutePay", "bonus", "minPayFloor", "maxPayFloor"]) {
+          if (typeof data[k] === "number") data[k] = String(data[k]);
+        }
+        if (!data.label) {
+          const d = new Date(data.blockDate);
+          const dn = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getUTCDay()];
+          data.label = `${dn} ${String(data.blockDate).slice(5)} — ${data.merchant}`;
+        }
+        const res = await db.createTimeblock(data);
+        return { success: true, id: res.id };
+      }),
+    duplicate: publicProcedure
+      .input(z.object({ id: z.number(), blockDate: z.string() }))
+      .mutation(async ({ input }) => {
+        const all = await db.listTimeblocks();
+        const src = all.find((t: any) => t.id === input.id);
+        if (!src) throw new Error("Timeblock not found");
+        const d = new Date(input.blockDate);
+        const dn = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getUTCDay()];
+        const { id: _id, createdAt: _c, ...copy } = src as any;
+        copy.blockDate = input.blockDate;
+        copy.dayName = dn;
+        copy.label = `${dn} ${input.blockDate.slice(5)} — ${src.merchant || "Flex"}`;
+        const res = await db.createTimeblock(copy);
+        return { success: true, id: res.id };
+      }),
+    delete: publicProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.deleteTimeblock(input.id);
         return { success: true };
       }),
   }),
@@ -183,6 +264,8 @@ export const appRouter = router({
       .input(
         z.object({
           id: z.number(),
+          bookingType: z.enum(["Direct", "Flex"]).optional(),
+          merchant: z.enum(["LAF", "BC", "SMC", "SMR"]).optional(),
           driverId: z.number().nullable().optional(),
           stops: z.number().optional(),
           estDuration: z.number().optional(),
@@ -223,7 +306,7 @@ export const appRouter = router({
           "actualStopsReturned",
           "actualDuration",
         ]);
-        const passthroughKeys = new Set(["status", "notes", "completionNotes"]);
+        const passthroughKeys = new Set(["status", "notes", "completionNotes", "bookingType", "merchant"]);
         const data: Record<string, unknown> = {};
         for (const [k, v] of Object.entries(rest)) {
           if (v === undefined) continue;

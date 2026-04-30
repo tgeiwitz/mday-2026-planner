@@ -89,8 +89,20 @@ export const timeblocks = mysqlTable("timeblocks", {
   id: int("id").autoincrement().primaryKey(),
   blockDate: date("blockDate").notNull(),
   dayName: varchar("dayName", { length: 16 }).notNull(),
-  wave: mysqlEnum("wave", ["Wave 1", "Wave 2"]).notNull(),
+  wave: mysqlEnum("wave", ["Wave 1", "Wave 2"]),
   label: varchar("label", { length: 128 }).notNull(),
+  // Merchant this block primarily serves (Flex = mixed)
+  merchant: mysqlEnum("merchant", ["LAF", "BC", "SMC", "SMR", "Flex"]).notNull().default("Flex"),
+  // Direct = single-merchant routes; Flex = routes can mix merchants
+  bookingType: mysqlEnum("bookingType", ["Direct", "Flex"]).notNull().default("Flex"),
+  // Driver on-the-road start time (e.g. "06:30")
+  routeStart: varchar("routeStart", { length: 8 }),
+  // Minutes of pickup dwell time (loading at merchant)
+  pickupDwell: int("pickupDwell").notNull().default(15),
+  // Per-mile pay rate
+  mileageRate: decimal("mileageRate", { precision: 6, scale: 3 }).notNull().default("0.670"),
+  // Target route count (capacity planning)
+  targetRoutes: int("targetRoutes").notNull().default(1),
   // Pickup times from historical data
   lafPickupTime: varchar("lafPickupTime", { length: 8 }),
   bcPickupTime: varchar("bcPickupTime", { length: 8 }),
@@ -103,6 +115,7 @@ export const timeblocks = mysqlTable("timeblocks", {
   bonus: decimal("bonus", { precision: 8, scale: 2 }).notNull().default("0"),
   minPayFloor: decimal("minPayFloor", { precision: 8, scale: 2 }).notNull().default("150"),
   maxPayFloor: decimal("maxPayFloor", { precision: 8, scale: 2 }).notNull().default("250"),
+  notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
@@ -126,7 +139,8 @@ export const routes = mysqlTable("routes", {
   id: int("id").autoincrement().primaryKey(),
   routeCode: varchar("routeCode", { length: 32 }).notNull().unique(),
   timeblockId: int("timeblockId").notNull(),
-  merchant: mysqlEnum("merchant", ["LAF", "BC"]).notNull(),
+  merchant: mysqlEnum("merchant", ["LAF", "BC", "SMC", "SMR"]).notNull(),
+  bookingType: mysqlEnum("bookingType", ["Direct", "Flex"]).notNull().default("Direct"),
   driverId: int("driverId"),
   stops: int("stops").notNull().default(0),
   estDuration: int("estDuration").notNull().default(0),
@@ -258,7 +272,7 @@ export type InsertForecastSnapshot = typeof forecastSnapshots.$inferInsert;
 export const wodelyTaskCache = mysqlTable("wodely_task_cache", {
   id: int("id").autoincrement().primaryKey(),
   wodelyTaskId: varchar("wodelyTaskId", { length: 64 }).notNull().unique(),
-  merchant: mysqlEnum("merchant", ["LAF", "BC"]).notNull(),
+  merchant: mysqlEnum("merchant", ["LAF", "BC", "SMC", "SMR"]).notNull(),
   deliveryDate: date("deliveryDate").notNull(),
   zoneId: int("zoneId"),
   taskFee: decimal("taskFee", { precision: 8, scale: 2 }).notNull().default("0"),
@@ -275,8 +289,37 @@ export type InsertWodelyTaskCache = typeof wodelyTaskCache.$inferInsert;
 export const zoneTaskHistory2025 = mysqlTable("zone_task_history_2025", {
   id: int("id").autoincrement().primaryKey(),
   taskDate: date("taskDate").notNull(),
-  merchant: mysqlEnum("merchant", ["LAF", "BC"]).notNull(),
+  merchant: mysqlEnum("merchant", ["LAF", "BC", "SMC", "SMR"]).notNull(),
   zoneId: int("zoneId").notNull(),
   taskCount: int("taskCount").notNull().default(0),
   avgFee: decimal("avgFee", { precision: 10, scale: 2 }).notNull().default("0"),
 });
+
+
+// Merchant share tokens — one per merchant, lets an external merchant contact
+// view/update their forecast via a public tokenized URL (/m/:token).
+export const merchantShareTokens = mysqlTable("merchant_share_tokens", {
+  id: int("id").autoincrement().primaryKey(),
+  token: varchar("token", { length: 64 }).notNull().unique(),
+  merchant: mysqlEnum("merchant", ["LAF", "BC", "SMC", "SMR"]).notNull(),
+  label: varchar("label", { length: 128 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  revokedAt: timestamp("revokedAt"),
+  lastUsedAt: timestamp("lastUsedAt"),
+});
+
+export type MerchantShareToken = typeof merchantShareTokens.$inferSelect;
+export type InsertMerchantShareToken = typeof merchantShareTokens.$inferInsert;
+
+// Per-date free-text note from the merchant (e.g. "running promo", "holiday closed").
+export const merchantDayNotes = mysqlTable("merchant_day_notes", {
+  id: int("id").autoincrement().primaryKey(),
+  merchant: mysqlEnum("merchant", ["LAF", "BC", "SMC", "SMR"]).notNull(),
+  noteDate: date("noteDate").notNull(),
+  note: text("note"),
+  updatedBy: varchar("updatedBy", { length: 128 }),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type MerchantDayNote = typeof merchantDayNotes.$inferSelect;
+export type InsertMerchantDayNote = typeof merchantDayNotes.$inferInsert;
