@@ -353,6 +353,7 @@ export async function getGlobalSettings() {
     holidaySurchargePerStop: "5.00",
     holidaySurchargeEnabled: false,
     targetDwellMinutes: "20",
+    travelTimeSource: "2026" as "2026" | "lastYear" | "sixtyDay",
   };
   if (!db) return defaults;
   const rows = await db.select().from(globalSettings);
@@ -376,6 +377,7 @@ export async function updateGlobalSettings(
     holidaySurchargePerStop: string;
     holidaySurchargeEnabled: boolean;
     targetDwellMinutes: string;
+    travelTimeSource: "2026" | "lastYear" | "sixtyDay";
   }>
 ) {
   const db = await getDb();
@@ -401,6 +403,11 @@ export async function recalculateAllRoutes(opts: { triggeredBy?: string } = {}) 
   const platformFeePct = parseFloat(settings.platformFeePct);
   const holidayPerStop = parseFloat(settings.holidaySurchargePerStop);
   const holidayEnabled = settings.holidaySurchargeEnabled;
+  const travelSource = (settings as { travelTimeSource?: string }).travelTimeSource ?? "2026";
+  const travelField: "travelTime2026" | "travelTimeLastYear" | "travelTime60Day" =
+    travelSource === "lastYear" ? "travelTimeLastYear"
+    : travelSource === "sixtyDay" ? "travelTime60Day"
+    : "travelTime2026";
 
   const allRoutes = await db.select().from(routes);
   const allZones = await db.select().from(zoneMetrics);
@@ -436,7 +443,7 @@ export async function recalculateAllRoutes(opts: { triggeredBy?: string } = {}) 
       const taskFee = r.merchant === "LAF" ? parseFloat(String(zm.lafFee2026)) : parseFloat(String(zm.bcFee2026));
       baselineFee += taskFee * z.taskCount;
       miles += parseFloat(String(zm.distance2026)) * z.taskCount;
-      travelMinutes += parseFloat(String(zm.travelTime2026)) * z.taskCount;
+      travelMinutes += parseFloat(String(zm[travelField] ?? zm.travelTime2026)) * z.taskCount;
       zoneStops += z.taskCount;
     }
 

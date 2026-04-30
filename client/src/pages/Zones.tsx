@@ -6,13 +6,28 @@ import { useState, useEffect, useMemo } from "react";
 import { toast } from "sonner";
 
 export default function Zones() {
+  const utils = trpc.useUtils();
   const { data: zones = [], refetch } = trpc.zones.list.useQuery();
+  const { data: settings } = trpc.settings.get.useQuery();
   const updateZone = trpc.zones.update.useMutation({
     onSuccess: () => {
       toast.success("Zone updated");
       refetch();
     },
   });
+  const updateSettings = trpc.settings.update.useMutation({
+    onSuccess: (_d, vars) => {
+      const label =
+        vars.travelTimeSource === "lastYear" ? "M-Day 2025 (LY)"
+        : vars.travelTimeSource === "sixtyDay" ? "60-Day Average"
+        : "2026 Assumption";
+      toast.success(`Route durations now using ${label}`);
+      utils.settings.invalidate();
+      utils.zones.invalidate();
+      utils.routes?.invalidate?.();
+    },
+  });
+  const travelSource = (settings as { travelTimeSource?: "2026" | "lastYear" | "sixtyDay" } | undefined)?.travelTimeSource ?? "2026";
 
   const [edits, setEdits] = useState<Record<number, Record<string, string>>>({});
 
@@ -83,6 +98,52 @@ export default function Zones() {
             Travel time, distance per stop, and task fees by zone. Seeded from May 5–12, 2025.
             The 2026 Assumption column is editable and flows through to route economics.
           </p>
+
+          {/* Travel time source toggle — controls which column drives route duration calculations */}
+          <div className="mt-6 flex flex-wrap items-center gap-3">
+            <div className="flex flex-col gap-1">
+              <span className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-medium">
+                Route Duration Source
+              </span>
+              <span className="text-xs text-muted-foreground">
+                Choose which travel-time column the planner uses to estimate route durations.
+              </span>
+            </div>
+            <div className="inline-flex rounded-md border border-border/60 bg-card p-0.5" role="radiogroup" aria-label="Travel time source">
+              {[
+                { v: "lastYear" as const, label: "M-Day 2025 (LY)" },
+                { v: "sixtyDay" as const, label: "60-Day Avg" },
+                { v: "2026" as const, label: "2026 Assumption" },
+              ].map((opt) => {
+                const active = travelSource === opt.v;
+                return (
+                  <button
+                    key={opt.v}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    disabled={updateSettings.isPending}
+                    onClick={() => {
+                      if (active) return;
+                      updateSettings.mutate({ travelTimeSource: opt.v });
+                    }}
+                    className={
+                      "px-3 py-1.5 text-xs font-medium rounded-[5px] transition-colors " +
+                      (active
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted/50") +
+                      (updateSettings.isPending ? " opacity-60 cursor-wait" : "")
+                    }
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+            {updateSettings.isPending && (
+              <span className="text-xs text-muted-foreground">Recalculating routes…</span>
+            )}
+          </div>
         </div>
       </div>
 

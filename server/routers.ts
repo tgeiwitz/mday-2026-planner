@@ -331,6 +331,7 @@ export const appRouter = router({
           holidaySurchargePerStop: z.string().optional(),
           holidaySurchargeEnabled: z.boolean().optional(),
           targetDwellMinutes: z.string().optional(),
+          travelTimeSource: z.enum(["2026", "lastYear", "sixtyDay"]).optional(),
         })
       )
       .mutation(async ({ input }) => {
