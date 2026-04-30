@@ -1,0 +1,13 @@
+import { getDb } from "../server/db.ts";
+import { sql } from "drizzle-orm";
+const db = await getDb();
+const [cols] = await db.execute(sql`SHOW COLUMNS FROM wodely_task_cache`);
+console.log("wodely_task_cache columns:");
+for (const c of cols) console.log(" ", c.Field, c.Type);
+const [sample] = await db.execute(sql`SELECT * FROM wodely_task_cache LIMIT 3`);
+console.log("\nSample:", JSON.stringify(sample, null, 2));
+const [count] = await db.execute(sql`SELECT COUNT(*) AS n FROM wodely_task_cache`);
+console.log("\nTotal rows:", count);
+const [dates] = await db.execute(sql`SELECT MIN(taskDate) AS min, MAX(taskDate) AS max FROM wodely_task_cache`);
+console.log("Date range:", dates);
+process.exit(0);

@@ -1,0 +1,13 @@
+import { getDb } from "../server/db.ts";
+import { sql } from "drizzle-orm";
+const db = await getDb();
+const [tables] = await db.execute(sql`SHOW TABLES`);
+console.log("Tables:");
+for (const t of tables) console.log(" ", Object.values(t)[0]);
+console.log("\nColumns of zone_task_history_2025:");
+const [cols] = await db.execute(sql`SHOW COLUMNS FROM zone_task_history_2025`);
+for (const c of cols) console.log(" ", c.Field, c.Type);
+console.log("\nSample row:");
+const [rows] = await db.execute(sql`SELECT * FROM zone_task_history_2025 LIMIT 3`);
+console.log(rows);
+process.exit(0);

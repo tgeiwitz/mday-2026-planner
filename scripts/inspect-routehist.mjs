@@ -1,0 +1,11 @@
+import { getDb } from "../server/db.ts";
+import { sql } from "drizzle-orm";
+const db = await getDb();
+const [cols] = await db.execute(sql`SHOW COLUMNS FROM route_history`);
+console.log("Columns:");
+for (const c of cols) console.log(" ", c.Field, c.Type);
+const [rows] = await db.execute(sql`SELECT * FROM route_history LIMIT 3`);
+console.log("Sample:", rows);
+const [count] = await db.execute(sql`SELECT COUNT(*) AS n FROM route_history`);
+console.log("Count:", count);
+process.exit(0);
