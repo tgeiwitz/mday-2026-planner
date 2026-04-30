@@ -404,6 +404,205 @@ export const appRouter = router({
     }),
   }),
 
+  merchantShare: router({
+    // --- Admin
+    listTokens: publicProcedure.query(() => db.listShareTokens()),
+    createToken: publicProcedure
+      .input(z.object({ merchant: z.enum(["LAF", "BC", "SMC", "SMR"]), label: z.string().optional() }))
+      .mutation(async ({ input }) => {
+        const token = await db.createShareToken(input.merchant, input.label);
+        return { success: true, token };
+      }),
+    revokeToken: publicProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.revokeShareToken(input.id);
+        return { success: true };
+      }),
+    // --- Public (token-gated)
+    view: publicProcedure
+      .input(z.object({ token: z.string(), startDate: z.string() }))
+      .query(async ({ input }) => {
+        const tokenRow = await db.getShareTokenRow(input.token);
+        if (!tokenRow || tokenRow.revokedAt) {
+          throw new Error("Share link is invalid or revoked");
+        }
+        await db.touchShareToken(tokenRow.id);
+
+        // Derive Mon–Sat week from startDate
+        const d = new Date(input.startDate + "T00:00:00Z");
+        const dow = d.getUTCDay(); // 0 Sun .. 6 Sat
+        const mondayOffset = dow === 0 ? -6 : 1 - dow;
+        const monday = new Date(d);
+        monday.setUTCDate(monday.getUTCDate() + mondayOffset);
+        const saturday = new Date(monday);
+        saturday.setUTCDate(saturday.getUTCDate() + 5);
+        const toIso = (x: Date) =>
+          `${x.getUTCFullYear()}-${String(x.getUTCMonth() + 1).padStart(2, "0")}-${String(x.getUTCDate()).padStart(2, "0")}`;
+        const weekStartIso = toIso(monday);
+        const weekEndIso = toIso(saturday);
+
+        // Current-week boundary: any date <= today is read-only snapshot
+        const today = new Date();
+        const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+
+        const forecastRows = await db.listForecastByDateRange(weekStartIso, weekEndIso);
+        const routes = await db.listRoutes();
+        const timeblocks = await db.listTimeblocks();
+        const tbDate = new Map<number, string>();
+        for (const tb of timeblocks) {
+          const v = tb.blockDate as any;
+          const iso = v instanceof Date
+            ? toIso(v)
+            : String(v).slice(0, 10);
+          tbDate.set(tb.id, iso);
+        }
+        // Build a per-day capacity map segmented by merchant
+        const byDay = new Map<string, { lafCap: number; bcCap: number; smcCap: number; smrCap: number; flexCap: number }>();
+        for (const r of routes) {
+          const iso = tbDate.get(r.timeblockId);
+          if (!iso) continue;
+          if (iso < weekStartIso || iso > weekEndIso) continue;
+          let cap = byDay.get(iso);
+          if (!cap) { cap = { lafCap: 0, bcCap: 0, smcCap: 0, smrCap: 0, flexCap: 0 }; byDay.set(iso, cap); }
+          const stops = r.stops || 0;
+          if (r.bookingType === "Flex") cap.flexCap += stops;
+          else if (r.merchant === "LAF") cap.lafCap += stops;
+          else if (r.merchant === "BC") cap.bcCap += stops;
+          else if (r.merchant === "SMC") cap.smcCap += stops;
+          else if (r.merchant === "SMR") cap.smrCap += stops;
+        }
+
+        const merchant = tokenRow.merchant as "LAF" | "BC" | "SMC" | "SMR";
+
+        // Compose Mon–Sat day rows
+        const days: Array<{
+          date: string;
+          dayName: string;
+          isPast: boolean;
+          isEditable: boolean;
+          budget: number;
+          forecast: number;
+          confirmed: number;
+          capacity: number;
+          remaining: number;
+          note: string;
+          noteUpdatedBy: string | null;
+        }> = [];
+        for (let i = 0; i < 6; i++) {
+          const cur = new Date(monday);
+          cur.setUTCDate(cur.getUTCDate() + i);
+          const iso = toIso(cur);
+          const dayName = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][i];
+          const isPast = iso < todayIso;
+          // Editable iff this week starts AFTER today (strictly future weeks) AND merchant has forecast fields (LAF/BC).
+          const weekStartsAfterToday = weekStartIso > todayIso;
+          const hasForecast = merchant === "LAF" || merchant === "BC";
+          const isEditable = weekStartsAfterToday && hasForecast && !isPast;
+
+          const fcRow = forecastRows.find((f: any) => toIso(f.forecastDate) === iso);
+          let budget = 0, forecast = 0, confirmed = 0;
+          if (fcRow) {
+            if (merchant === "LAF") {
+              budget = fcRow.laf2026Goal ?? 0;
+              forecast = fcRow.lafReforecast ?? fcRow.laf2026Goal ?? 0;
+              confirmed = fcRow.lafConfirmed ?? 0;
+            } else if (merchant === "BC") {
+              budget = fcRow.bc2026Goal ?? 0;
+              forecast = fcRow.bcReforecast ?? fcRow.bc2026Goal ?? 0;
+              confirmed = fcRow.bcConfirmed ?? 0;
+            }
+          }
+          const dayCap = byDay.get(iso);
+          const mFlex = dayCap?.flexCap ?? 0;
+          const capDirect =
+            merchant === "LAF" ? (dayCap?.lafCap ?? 0)
+            : merchant === "BC" ? (dayCap?.bcCap ?? 0)
+            : merchant === "SMC" ? (dayCap?.smcCap ?? 0)
+            : (dayCap?.smrCap ?? 0);
+          const capacity = capDirect + mFlex;
+          const note = await db.getMerchantDayNote(merchant, iso);
+          days.push({
+            date: iso,
+            dayName,
+            isPast,
+            isEditable,
+            budget,
+            forecast,
+            confirmed,
+            capacity,
+            remaining: Math.max(0, capacity - Math.max(forecast, confirmed)),
+            note: note?.note ?? "",
+            noteUpdatedBy: note?.updatedBy ?? null,
+          });
+        }
+
+        return {
+          merchant,
+          label: tokenRow.label,
+          weekStart: weekStartIso,
+          weekEnd: weekEndIso,
+          isCurrentWeek: weekStartIso <= todayIso && todayIso <= weekEndIso,
+          isFutureWeek: weekStartIso > todayIso,
+          isPastWeek: weekEndIso < todayIso,
+          hasForecast: merchant === "LAF" || merchant === "BC",
+          days,
+        };
+      }),
+    setForecast: publicProcedure
+      .input(z.object({
+        token: z.string(),
+        date: z.string(),
+        forecast: z.number().min(0),
+      }))
+      .mutation(async ({ input }) => {
+        const tokenRow = await db.getShareTokenRow(input.token);
+        if (!tokenRow || tokenRow.revokedAt) throw new Error("Invalid or revoked share link");
+        if (!(tokenRow.merchant === "LAF" || tokenRow.merchant === "BC")) {
+          throw new Error(`${tokenRow.merchant} uses ad-hoc delivery, no forecast to set`);
+        }
+        // Guard: only allow edits for future weeks (strictly after today)
+        const today = new Date();
+        const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+        const d = new Date(input.date + "T00:00:00Z");
+        const dow = d.getUTCDay();
+        const mondayOffset = dow === 0 ? -6 : 1 - dow;
+        const monday = new Date(d);
+        monday.setUTCDate(monday.getUTCDate() + mondayOffset);
+        const mondayIso = `${monday.getUTCFullYear()}-${String(monday.getUTCMonth() + 1).padStart(2, "0")}-${String(monday.getUTCDate()).padStart(2, "0")}`;
+        if (mondayIso <= todayIso) {
+          throw new Error("Current and past weeks are read-only");
+        }
+        await db.touchShareToken(tokenRow.id);
+        const forecastRows = await db.listForecastByDateRange(input.date, input.date);
+        if (forecastRows.length === 0) throw new Error("No forecast row for that date");
+        const row = forecastRows[0];
+        const patch: any = {};
+        if (tokenRow.merchant === "LAF") patch.lafReforecast = input.forecast;
+        else if (tokenRow.merchant === "BC") patch.bcReforecast = input.forecast;
+        await db.updateDailyForecast(row.id, patch);
+        return { success: true };
+      }),
+    setNote: publicProcedure
+      .input(z.object({
+        token: z.string(),
+        date: z.string(),
+        note: z.string().max(500),
+      }))
+      .mutation(async ({ input }) => {
+        const tokenRow = await db.getShareTokenRow(input.token);
+        if (!tokenRow || tokenRow.revokedAt) throw new Error("Invalid or revoked share link");
+        await db.touchShareToken(tokenRow.id);
+        await db.upsertMerchantDayNote(
+          tokenRow.merchant as any,
+          input.date,
+          input.note || null,
+          tokenRow.label || tokenRow.merchant,
+        );
+        return { success: true };
+      }),
+  }),
+
   settings: router({
     get: publicProcedure.query(() => db.getGlobalSettings()),
     update: publicProcedure

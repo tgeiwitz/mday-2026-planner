@@ -237,7 +237,7 @@ export default function Timeblocks() {
               </div>
               <div className="divide-y divide-border/60">
                 {blocksOnDate.map((b: any) => {
-                  const waveAssignments = assignmentsByBlock.get(b.id) ?? [];
+                  const blockAssignments = assignmentsByBlock.get(b.id) ?? [];
                   return (
                     <div key={b.id} className="px-6 py-4">
                       <div className="grid grid-cols-12 gap-4 items-start">
@@ -302,10 +302,10 @@ export default function Timeblocks() {
                         </div>
                         <div className="col-span-12 md:col-span-3">
                           <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
-                            Drivers ({waveAssignments.length})
+                            Drivers ({blockAssignments.length})
                           </div>
                           <div className="flex flex-wrap gap-1.5">
-                            {waveAssignments.map((a) => {
+                            {blockAssignments.map((a) => {
                               const d = driverMap.get(a.driverId);
                               if (!d) return null;
                               return (
@@ -344,7 +344,7 @@ export default function Timeblocks() {
                                 </SelectTrigger>
                                 <SelectContent>
                                   {drivers
-                                    .filter((d) => !waveAssignments.some((a) => a.driverId === d.id))
+                                    .filter((d) => !blockAssignments.some((a) => a.driverId === d.id))
                                     .map((d) => (
                                       <SelectItem key={d.id} value={String(d.id)}>
                                         {d.name}
