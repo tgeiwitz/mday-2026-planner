@@ -154,3 +154,10 @@
 - [ ] New dispatch page: Availability Inbox (list submissions with prominent notes, one-click Scheduled/Standby assignment per block)
 - [ ] Timeblock page: show Scheduled / Standby / Available-unassigned driver rollups per block
 - [ ] Vitest for token expire, PIN lockout, submission persistence
+
+## v15 Travel-Time Source Controls
+- [x] Global toggle on Zone Metrics page: route duration uses LY / 60d / 2026
+- [x] Per-zone override: zone_metrics.travelTimeSource (global/lastYear/sixtyDay/y2026) with Zones page dropdown per row; falls back to global
+
+## v16 Flex Routes (no merchant split)
+- [ ] Remove merchant as a route-separator: routes can carry both LAF and BC stops; audit routes list, filters, labels, fee calc

@@ -154,7 +154,7 @@ export default function Zones() {
               <thead>
                 <tr>
                   <th rowSpan={2} className="align-bottom sticky-col">Zone</th>
-                  <th colSpan={3} className="text-center border-r border-border/60">Travel Time (min/task)</th>
+                  <th colSpan={4} className="text-center border-r border-border/60">Travel Time (min/task)</th>
                   <th colSpan={3} className="text-center border-r border-border/60">Distance (mi/stop)</th>
                   <th colSpan={3} className="text-center border-r border-border/60">LAF Avg Fee</th>
                   <th colSpan={3} className="text-center">BC Avg Fee</th>
@@ -162,7 +162,8 @@ export default function Zones() {
                 <tr>
                   <th className="!py-2 text-[10px]">Last Year</th>
                   <th className="!py-2 text-[10px]">60-Day</th>
-                  <th className="!py-2 text-[10px] border-r border-border/60 bg-primary/5">2026</th>
+                  <th className="!py-2 text-[10px] bg-primary/5">2026</th>
+                  <th className="!py-2 text-[10px] border-r border-border/60" title="Which travel-time column drives this zone's route duration">Source</th>
                   <th className="!py-2 text-[10px]">Last Year</th>
                   <th className="!py-2 text-[10px]">60-Day</th>
                   <th className="!py-2 text-[10px] border-r border-border/60 bg-primary/5">2026</th>
@@ -183,9 +184,9 @@ export default function Zones() {
                         <div className="font-medium leading-tight text-sm">{z.zoneName ?? "—"}</div>
                         <div className="text-[10px] text-muted-foreground font-mono">#{z.zoneId}</div>
                       </td>
-                      <td className="num-cell text-muted-foreground">{Number(z.travelTimeLastYear).toFixed(2)}</td>
-                      <td className="num-cell text-muted-foreground">{Number(z.travelTime60Day).toFixed(2)}</td>
-                      <td className="!py-1 !px-2 border-r border-border/60 bg-primary/5">
+                      <td className={"num-cell " + ((z as { travelTimeSource?: string }).travelTimeSource === "lastYear" ? "font-semibold text-foreground" : "text-muted-foreground")}>{Number(z.travelTimeLastYear).toFixed(2)}</td>
+                      <td className={"num-cell " + ((z as { travelTimeSource?: string }).travelTimeSource === "sixtyDay" ? "font-semibold text-foreground" : "text-muted-foreground")}>{Number(z.travelTime60Day).toFixed(2)}</td>
+                      <td className="!py-1 !px-2 bg-primary/5">
                         <Input
                           className="h-8 text-xs font-mono text-right border-transparent bg-transparent hover:border-border focus:border-ring"
                           value={e.travelTime2026 ?? ""}
@@ -194,6 +195,19 @@ export default function Zones() {
                           }
                           onBlur={(ev) => handleBlur(z.id, "travelTime2026", ev.target.value)}
                         />
+                      </td>
+                      <td className="!py-1 !px-2 border-r border-border/60">
+                        <select
+                          className="h-8 text-xs rounded-md border border-border/60 bg-background px-2 w-full focus:outline-none focus:ring-2 focus:ring-ring"
+                          value={(z as { travelTimeSource?: string }).travelTimeSource ?? "global"}
+                          onChange={(ev) => updateZone.mutate({ id: z.id, travelTimeSource: ev.target.value as "global" | "lastYear" | "sixtyDay" | "y2026" })}
+                          title="Travel-time source used for route duration calculations"
+                        >
+                          <option value="global">Global ({travelSource === "lastYear" ? "LY" : travelSource === "sixtyDay" ? "60d" : "2026"})</option>
+                          <option value="lastYear">M-Day 2025 (LY)</option>
+                          <option value="sixtyDay">60-Day Avg</option>
+                          <option value="y2026">2026 Assumption</option>
+                        </select>
                       </td>
                       <td className="num-cell text-muted-foreground">{Number(z.distanceLastYear).toFixed(1)}</td>
                       <td className="num-cell text-muted-foreground">{Number(z.distance60Day).toFixed(1)}</td>

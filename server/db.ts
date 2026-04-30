@@ -403,11 +403,21 @@ export async function recalculateAllRoutes(opts: { triggeredBy?: string } = {}) 
   const platformFeePct = parseFloat(settings.platformFeePct);
   const holidayPerStop = parseFloat(settings.holidaySurchargePerStop);
   const holidayEnabled = settings.holidaySurchargeEnabled;
-  const travelSource = (settings as { travelTimeSource?: string }).travelTimeSource ?? "2026";
-  const travelField: "travelTime2026" | "travelTimeLastYear" | "travelTime60Day" =
-    travelSource === "lastYear" ? "travelTimeLastYear"
-    : travelSource === "sixtyDay" ? "travelTime60Day"
+  const globalTravelSource = (settings as { travelTimeSource?: string }).travelTimeSource ?? "2026";
+  const globalTravelField: "travelTime2026" | "travelTimeLastYear" | "travelTime60Day" =
+    globalTravelSource === "lastYear" ? "travelTimeLastYear"
+    : globalTravelSource === "sixtyDay" ? "travelTime60Day"
     : "travelTime2026";
+  // Per-zone override: if zm.travelTimeSource is not "global", it wins.
+  const resolveZoneTravelField = (zoneSrc: string | null | undefined): "travelTime2026" | "travelTimeLastYear" | "travelTime60Day" => {
+    switch (zoneSrc) {
+      case "lastYear": return "travelTimeLastYear";
+      case "sixtyDay": return "travelTime60Day";
+      case "y2026":    return "travelTime2026";
+      case "global":
+      default:         return globalTravelField;
+    }
+  };
 
   const allRoutes = await db.select().from(routes);
   const allZones = await db.select().from(zoneMetrics);
@@ -443,7 +453,8 @@ export async function recalculateAllRoutes(opts: { triggeredBy?: string } = {}) 
       const taskFee = r.merchant === "LAF" ? parseFloat(String(zm.lafFee2026)) : parseFloat(String(zm.bcFee2026));
       baselineFee += taskFee * z.taskCount;
       miles += parseFloat(String(zm.distance2026)) * z.taskCount;
-      travelMinutes += parseFloat(String(zm[travelField] ?? zm.travelTime2026)) * z.taskCount;
+      const zField = resolveZoneTravelField((zm as { travelTimeSource?: string }).travelTimeSource);
+      travelMinutes += parseFloat(String(zm[zField] ?? zm.travelTime2026)) * z.taskCount;
       zoneStops += z.taskCount;
     }
 

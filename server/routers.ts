@@ -52,6 +52,7 @@ export const appRouter = router({
           distance2026: z.union([z.string(), z.number()]).optional(),
           lafFee2026: z.union([z.string(), z.number()]).optional(),
           bcFee2026: z.union([z.string(), z.number()]).optional(),
+          travelTimeSource: z.enum(["global", "lastYear", "sixtyDay", "y2026"]).optional(),
         })
       )
       .mutation(async ({ input }) => {
@@ -61,6 +62,7 @@ export const appRouter = router({
           if (v !== undefined) update[k] = String(v);
         }
         await db.updateZoneMetric(id, update);
+        await db.recalculateAllRoutes({ triggeredBy: `zones.update:${id}` });
         return { success: true };
       }),
     distribution: publicProcedure

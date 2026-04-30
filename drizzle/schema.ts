@@ -62,6 +62,8 @@ export const zoneMetrics = mysqlTable("zone_metrics", {
   bcFee2026: decimal("bcFee2026", { precision: 8, scale: 2 }).notNull().default("0"),
   lafVolume2025: int("laf_volume_2025").notNull().default(0),
   bcVolume2025: int("bc_volume_2025").notNull().default(0),
+  // Per-zone travel-time source override. "global" = follow global setting.
+  travelTimeSource: mysqlEnum("travelTimeSource", ["global", "lastYear", "sixtyDay", "y2026"]).notNull().default("global"),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
