@@ -360,3 +360,14 @@
 - [ ] Surface internal Notes text area on Timeblocks editor (column already exists)
 - [ ] Surface internal Notes text area on Routes expanded row (column already exists)
 - [ ] Vitest: drivers.update accepts internalNotes; persists round-trip
+
+
+## v40 Timeblocks page cleanup
+- [ ] Remove the inline driver sign-up widget from Timeblocks page entirely (sign-ups live on `/signup` only)
+- [ ] Remove the duplicate "+ New timeblock" + "Add block" buttons; keep one CTA: Auto-Create Week
+- [ ] Group rows by week (Mon–Sun heading) with totals (# blocks, routes built / target)
+- [ ] Collapsed row = one line that fits screen: Date · Day · Merchant · Pickup · Routes (live count / target) · Pay range
+- [ ] Click row to expand; expanded shows full editor inline + Edit/Duplicate/Delete; no edit fields visible in collapsed mode
+- [ ] Live "# routes built / target" count in collapsed + expanded (uses routes.list)
+- [ ] No horizontal scroll on the collapsed list
+- [ ] Tests still green

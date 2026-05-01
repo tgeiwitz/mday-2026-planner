@@ -10,20 +10,13 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { InlineEnumInput } from "@/components/InlineEnumInput";
 import { trpc } from "@/lib/trpc";
-import { Plus, X, Pencil, Copy, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { Plus, Pencil, Copy, Trash2, ChevronDown, ChevronRight } from "lucide-react";
+import { useState, useMemo } from "react";
 import { toast } from "sonner";
 
-import { fmtDate, toISODate } from "@/lib/date";
+import { dayName, fmtDate, fmtDateShort, mondayOf, addDays, toISODate } from "@/lib/date";
 
 type EditorMode = "create" | "edit";
 type TBForm = {
@@ -81,10 +74,9 @@ function merchantBadgeClass(m: string): string {
 
 export default function Timeblocks() {
   const { data: blocks = [], refetch: refetchBlocks } = trpc.timeblocks.list.useQuery();
-  const { data: drivers = [] } = trpc.drivers.list.useQuery();
-  const { data: assignments = [], refetch: refetchAssignments } = trpc.driverTimeblocks.list.useQuery();
+  const { data: routes = [] } = trpc.routes.list.useQuery();
 
-  const invalidate = () => { refetchBlocks(); refetchAssignments(); };
+  const invalidate = () => { refetchBlocks(); };
 
   const createBlock = trpc.timeblocks.create.useMutation({
     onSuccess: () => { invalidate(); toast.success("Timeblock created"); setEditor(null); },
@@ -110,34 +102,52 @@ export default function Timeblocks() {
     onError: (e) => toast.error(e.message),
   });
 
-  const assign = trpc.driverTimeblocks.assign.useMutation({
-    onSuccess: () => { refetchAssignments(); toast.success("Driver assigned"); },
-  });
-  const remove = trpc.driverTimeblocks.remove.useMutation({ onSuccess: () => refetchAssignments() });
-  const updateStatus = trpc.driverTimeblocks.updateStatus.useMutation({ onSuccess: () => refetchAssignments() });
-
-  const [selectedDriver, setSelectedDriver] = useState<Record<number, string>>({});
   const [editor, setEditor] = useState<{ mode: EditorMode; form: TBForm } | null>(null);
   const [dupTarget, setDupTarget] = useState<{ id: number; date: string } | null>(null);
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
 
-  const assignmentsByBlock = new Map<number, typeof assignments>();
-  for (const a of assignments) {
-    if (!assignmentsByBlock.has(a.timeblockId)) assignmentsByBlock.set(a.timeblockId, []);
-    assignmentsByBlock.get(a.timeblockId)!.push(a);
-  }
-  const driverMap = new Map(drivers.map((d) => [d.id, d]));
+  // Live route counts per timeblock
+  const routeCountByBlock = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const r of routes as any[]) {
+      m.set(r.timeblockId, (m.get(r.timeblockId) ?? 0) + 1);
+    }
+    return m;
+  }, [routes]);
 
-  const byDate = new Map<string, typeof blocks>();
-  for (const b of blocks) {
-    const k = toISODate(b.blockDate);
-    if (!byDate.has(k)) byDate.set(k, []);
-    byDate.get(k)!.push(b);
+  // Group blocks by week (Monday) -> by date
+  const grouped = useMemo(() => {
+    const out = new Map<string, { weekOf: string; blocks: any[] }>();
+    for (const b of blocks as any[]) {
+      const iso = toISODate(b.blockDate);
+      const wk = mondayOf(iso);
+      if (!out.has(wk)) out.set(wk, { weekOf: wk, blocks: [] });
+      out.get(wk)!.blocks.push(b);
+    }
+    // Sort each week's blocks by date asc, then by start time
+    for (const v of Array.from(out.values())) {
+      v.blocks.sort((a: any, b: any) => {
+        const ad = toISODate(a.blockDate);
+        const bd = toISODate(b.blockDate);
+        if (ad !== bd) return ad < bd ? -1 : 1;
+        return (a.routeStart ?? "").localeCompare(b.routeStart ?? "");
+      });
+    }
+    return Array.from(out.values()).sort((a, b) => (a.weekOf < b.weekOf ? -1 : 1));
+  }, [blocks]);
+
+  function toggle(id: number) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
-  const sortedDates = Array.from(byDate.keys()).sort();
 
   function openCreate(dateIso?: string) {
     const today = new Date();
-    const fallbackIso = [today.getFullYear(), String(today.getMonth() + 1).padStart(2, "0"), String(today.getDate()).padStart(2, "0")].join("-");
+    const fallbackIso = toISODate(today);
     setEditor({ mode: "create", form: EMPTY_FORM(dateIso ?? fallbackIso) });
   }
   function openEdit(b: any) {
@@ -202,7 +212,7 @@ export default function Timeblocks() {
   return (
     <div className="min-h-screen bg-background">
       <div className="border-b border-border bg-gradient-to-b from-muted/30 to-transparent">
-        <div className="container py-8">
+        <div className="container py-6">
           <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground font-medium">
             Schedule & operating defaults
           </span>
@@ -210,216 +220,136 @@ export default function Timeblocks() {
             <div>
               <h1 className="page-title">Timeblocks</h1>
               <p className="page-subtitle max-w-3xl">
-                Each timeblock defines a shift: route start, pickup window, pay defaults, and targeted route count.
-                Flex blocks can carry mixed merchants; Direct blocks are single-merchant.
+                One row per block. Click a row to expand the editor. Driver sign-ups happen on the public sign-up page.
               </p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
               <AutoCreateWeekButton onCreate={(weekOf) => autoCreateWeek.mutate({ weekOf })} pending={autoCreateWeek.isPending} />
-              <Button onClick={() => openCreate()}>
-                <Plus className="h-4 w-4 mr-1.5" /> New timeblock
-              </Button>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="container py-8 space-y-6">
-        {sortedDates.length === 0 && (
+      <div className="container py-6 space-y-8">
+        {grouped.length === 0 && (
           <Card className="border-dashed border-border/60 p-10 text-center">
-            <p className="text-sm text-muted-foreground mb-4">No timeblocks yet.</p>
+            <p className="text-sm text-muted-foreground mb-4">
+              No timeblocks yet. Use Auto-Create Week to populate a Mon–Sun template.
+            </p>
             <Button onClick={() => openCreate()} variant="outline">
-              <Plus className="h-4 w-4 mr-1.5" /> Create your first timeblock
+              <Plus className="h-4 w-4 mr-1.5" /> Add a single timeblock
             </Button>
           </Card>
         )}
-        {sortedDates.map((dateKey) => {
-          const blocksOnDate = byDate.get(dateKey) ?? [];
+
+        {grouped.map((week) => {
+          const totalTarget = week.blocks.reduce((s: number, b: any) => s + Number(b.targetRoutes ?? 0), 0);
+          const totalBuilt = week.blocks.reduce((s: number, b: any) => s + (routeCountByBlock.get(b.id) ?? 0), 0);
+          const sun = addDays(week.weekOf, 6);
           return (
-            <Card key={dateKey} className="border-border/60 overflow-hidden">
-              <div className="px-6 py-3 border-b border-border/60 bg-muted/20 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <h2 className="font-serif text-lg">{fmtDate(dateKey)}</h2>
-                  <span className="text-xs text-muted-foreground font-mono">{dateKey}</span>
+            <div key={week.weekOf}>
+              <div className="flex items-baseline justify-between mb-2 px-1">
+                <h2 className="font-serif text-base">
+                  Week of {fmtDateShort(week.weekOf)} – {fmtDateShort(sun)}
+                </h2>
+                <div className="text-xs text-muted-foreground">
+                  {week.blocks.length} blocks · {totalBuilt}/{totalTarget} routes
                 </div>
-                <Button size="sm" variant="ghost" onClick={() => openCreate(dateKey)}>
-                  <Plus className="h-3.5 w-3.5 mr-1" /> Add block
-                </Button>
               </div>
-              <div className="divide-y divide-border/60">
-                {blocksOnDate.map((b: any) => {
-                  const blockAssignments = assignmentsByBlock.get(b.id) ?? [];
-                  return (
-                    <div key={b.id} className="px-6 py-4">
-                      <div className="grid grid-cols-12 gap-4 items-start">
-                        <div className="col-span-12 md:col-span-3">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <Badge className={merchantBadgeClass(b.merchant ?? "Flex")}>
-                              {b.merchant ?? "Flex"}
-                            </Badge>
-                            {b.bookingType === "Direct" && (
-                              <Badge variant="outline" className="font-normal">Direct</Badge>
+              <Card className="border-border/60 overflow-hidden">
+                <div className="divide-y divide-border/60">
+                  {week.blocks.map((b: any) => {
+                    const isOpen = expanded.has(b.id);
+                    const built = routeCountByBlock.get(b.id) ?? 0;
+                    const target = Number(b.targetRoutes ?? 0);
+                    const ratioColor =
+                      built >= target
+                        ? "text-emerald-700"
+                        : built >= target * 0.5
+                        ? "text-amber-700"
+                        : "text-muted-foreground";
+                    const merchant = b.merchant ?? "Flex";
+                    const pickup = merchant === "LAF" ? b.lafPickupTime : merchant === "BC" ? b.bcPickupTime : (b.lafPickupTime || b.bcPickupTime);
+                    return (
+                      <div key={b.id}>
+                        {/* Collapsed row */}
+                        <button
+                          type="button"
+                          className="w-full text-left px-4 py-2 hover:bg-muted/30 transition flex items-center gap-3 text-sm"
+                          onClick={() => toggle(b.id)}
+                        >
+                          {isOpen ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
+                          <div className="w-[88px] shrink-0">
+                            <div className="font-medium">{dayName(b.blockDate)} {fmtDateShort(b.blockDate)}</div>
+                          </div>
+                          <Badge className={`${merchantBadgeClass(merchant)} shrink-0`}>{merchant}</Badge>
+                          <div className="w-[64px] shrink-0 font-mono text-xs">
+                            {b.routeStart ?? "—"}
+                          </div>
+                          <div className="hidden md:block w-[64px] shrink-0 font-mono text-xs text-muted-foreground">
+                            {pickup ?? "—"}
+                          </div>
+                          <div className={`w-[88px] shrink-0 font-mono text-xs ${ratioColor}`}>
+                            {built}/{target} routes
+                          </div>
+                          <div className="hidden md:block flex-1 text-xs text-muted-foreground truncate">
+                            ${b.minPayFloor}–${b.maxPayFloor} · {b.estDuration}m · ${b.mileageRate}/mi
+                          </div>
+                          <div className="hidden md:block flex-1 text-xs text-muted-foreground truncate">
+                            {b.label}
+                          </div>
+                        </button>
+
+                        {/* Expanded editor */}
+                        {isOpen && (
+                          <div className="px-6 py-4 bg-muted/10 border-t border-border/60">
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+                              <Mini label="Route start" value={b.routeStart ?? "—"} />
+                              <Mini label="LAF pickup" value={b.lafPickupTime ?? "—"} />
+                              <Mini label="BC pickup" value={b.bcPickupTime ?? "—"} />
+                              <Mini label="Avail" value={`${b.availabilityStart}–${b.availabilityEnd}`} />
+                              <Mini label="Pickup dwell" value={`${b.pickupDwell} min`} />
+                              <Mini label="Target routes" value={`${target}`} />
+                              <Mini label="Routes built" value={`${built}`} />
+                              <Mini label="Mileage rate" value={`$${b.mileageRate}/mi`} />
+                              <Mini label="Est duration" value={`${b.estDuration} min`} />
+                              <Mini label="Est route pay" value={`$${b.estRoutePay}`} />
+                              <Mini label="Bonus" value={`$${b.bonus}`} />
+                              <Mini label="Pay floor" value={`$${b.minPayFloor}–$${b.maxPayFloor}`} />
+                            </div>
+                            {b.notes && (
+                              <div className="text-[12px] text-muted-foreground italic mb-3">
+                                Note: {b.notes}
+                              </div>
                             )}
-                            {b.bookingType === "Flex" && (
-                              <Badge variant="outline" className="font-normal">Flex</Badge>
-                            )}
-                          </div>
-                          <div className="font-medium text-sm mt-1.5">{b.label}</div>
-                          <div className="text-[11px] text-muted-foreground mt-0.5">
-                            Start {b.routeStart ?? "—"} · Avail {b.availabilityStart}–{b.availabilityEnd}
-                          </div>
-                          <div className="text-[11px] text-muted-foreground">
-                            Dwell {b.pickupDwell}m · Target {b.targetRoutes} rte · ${b.mileageRate}/mi
-                          </div>
-                        </div>
-                        <div className="col-span-6 md:col-span-2">
-                          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">LAF Pickup</div>
-                          <div className="font-mono text-sm">{b.lafPickupTime ?? "—"}</div>
-                          <div className="text-[10px] uppercase tracking-wider text-muted-foreground mt-1">BC Pickup</div>
-                          <div className="font-mono text-sm">{b.bcPickupTime ?? "—"}</div>
-                        </div>
-                        <div className="col-span-6 md:col-span-1">
-                          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Est Pay</div>
-                          <Input
-                            className="h-8 font-mono text-sm border-transparent hover:border-border focus:border-ring"
-                            defaultValue={String(b.estRoutePay)}
-                            onBlur={(e) => updateBlock.mutate({ id: b.id, estRoutePay: e.target.value })}
-                          />
-                        </div>
-                        <div className="col-span-6 md:col-span-1">
-                          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Dur (min)</div>
-                          <Input
-                            className="h-8 font-mono text-sm border-transparent hover:border-border focus:border-ring"
-                            type="number"
-                            defaultValue={b.estDuration}
-                            onBlur={(e) => updateBlock.mutate({ id: b.id, estDuration: parseInt(e.target.value) || 0 })}
-                          />
-                        </div>
-                        <div className="col-span-6 md:col-span-1">
-                          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Min</div>
-                          <Input
-                            className="h-8 font-mono text-sm border-transparent hover:border-border focus:border-ring"
-                            defaultValue={String(b.minPayFloor)}
-                            onBlur={(e) => updateBlock.mutate({ id: b.id, minPayFloor: e.target.value })}
-                          />
-                        </div>
-                        <div className="col-span-6 md:col-span-1">
-                          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Max</div>
-                          <Input
-                            className="h-8 font-mono text-sm border-transparent hover:border-border focus:border-ring"
-                            defaultValue={String(b.maxPayFloor)}
-                            onBlur={(e) => updateBlock.mutate({ id: b.id, maxPayFloor: e.target.value })}
-                          />
-                        </div>
-                        <div className="col-span-12 md:col-span-3">
-                          <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
-                            Drivers ({blockAssignments.length})
-                          </div>
-                          <div className="flex flex-wrap gap-1.5">
-                            {blockAssignments.map((a) => {
-                              const d = driverMap.get(a.driverId);
-                              if (!d) return null;
-                              return (
-                                <Badge
-                                  key={a.id}
-                                  className={`font-normal cursor-pointer gap-1 ${
-                                    a.assignmentStatus === "Scheduled"
-                                      ? "bg-primary text-primary-foreground"
-                                      : "bg-secondary text-secondary-foreground"
-                                  }`}
-                                  onClick={() =>
-                                    updateStatus.mutate({
-                                      id: a.id,
-                                      status: a.assignmentStatus === "Scheduled" ? "Signed Up" : "Scheduled",
-                                    })
-                                  }
-                                >
-                                  {d.name}
-                                  <X
-                                    className="h-3 w-3 ml-1"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      remove.mutate({ id: a.id });
-                                    }}
-                                  />
-                                </Badge>
-                              );
-                            })}
-                            <div className="flex gap-1">
-                              <InlineEnumInput
-                                value={selectedDriver[b.id] ?? ""}
-                                options={drivers
-                                  .filter((d) => !blockAssignments.some((a) => a.driverId === d.id))
-                                  .map((d) => d.name)}
-                                labelMap={Object.fromEntries(
-                                  drivers.map((d) => [String(d.id), d.name]),
-                                )}
-                                placeholder="Type a driver name…"
-                                onCommit={(v) => {
-                                  if (!v.trim()) {
-                                    setSelectedDriver((p) => ({ ...p, [b.id]: "" }));
-                                    return;
-                                  }
-                                  const match = drivers.find(
-                                    (d) => d.name.toLowerCase() === v.trim().toLowerCase(),
-                                  );
-                                  if (match) setSelectedDriver((p) => ({ ...p, [b.id]: String(match.id) }));
-                                }}
-                                className="h-6 w-[140px]"
-                                ariaLabel="Driver to assign"
-                              />
+                            <div className="flex gap-2 justify-end">
+                              <Button size="sm" variant="outline" onClick={() => openEdit(b)}>
+                                <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
+                              </Button>
+                              <Button size="sm" variant="ghost" onClick={() => setDupTarget({ id: b.id, date: toISODate(b.blockDate) })}>
+                                <Copy className="h-3.5 w-3.5 mr-1" /> Duplicate
+                              </Button>
                               <Button
                                 size="sm"
-                                variant="outline"
-                                className="h-6 w-6 p-0"
+                                variant="ghost"
+                                className="text-destructive hover:text-destructive"
                                 onClick={() => {
-                                  const did = selectedDriver[b.id];
-                                  if (did) {
-                                    assign.mutate({
-                                      driverId: parseInt(did),
-                                      timeblockId: b.id,
-                                      assignmentStatus: "Signed Up",
-                                    });
-                                    setSelectedDriver((p) => ({ ...p, [b.id]: "" }));
+                                  if (confirm(`Delete timeblock "${b.label}"? This removes its routes and driver assignments.`)) {
+                                    deleteBlock.mutate({ id: b.id });
                                   }
                                 }}
                               >
-                                <Plus className="h-3 w-3" />
+                                <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete
                               </Button>
                             </div>
                           </div>
-                        </div>
+                        )}
                       </div>
-                      {b.notes && (
-                        <div className="mt-3 text-[12px] text-muted-foreground italic">
-                          Note: {b.notes}
-                        </div>
-                      )}
-                      <div className="mt-3 flex gap-2 justify-end">
-                        <Button size="sm" variant="ghost" onClick={() => openEdit(b)}>
-                          <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => setDupTarget({ id: b.id, date: dateKey })}>
-                          <Copy className="h-3.5 w-3.5 mr-1" /> Duplicate
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-destructive hover:text-destructive"
-                          onClick={() => {
-                            if (confirm(`Delete timeblock "${b.label}"? This removes its routes and driver assignments.`)) {
-                              deleteBlock.mutate({ id: b.id });
-                            }
-                          }}
-                        >
-                          <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </Card>
+                    );
+                  })}
+                </div>
+              </Card>
+            </div>
           );
         })}
       </div>
@@ -431,7 +361,7 @@ export default function Timeblocks() {
             <DialogTitle>{editor?.mode === "create" ? "New timeblock" : "Edit timeblock"}</DialogTitle>
           </DialogHeader>
           {editor && (
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-4 max-h-[70vh] overflow-y-auto pr-1">
               <Field label="Date">
                 <Input type="date" value={editor.form.blockDate}
                   onChange={(e) => setEditor({ ...editor, form: { ...editor.form, blockDate: e.target.value } })} />
@@ -576,21 +506,29 @@ function Field({ label, children, full }: { label: string; children: React.React
   );
 }
 
+function Mini({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
+      <div className="text-sm font-mono mt-0.5">{value}</div>
+    </div>
+  );
+}
+
 function AutoCreateWeekButton({ onCreate, pending }: { onCreate: (weekOf: string) => void; pending: boolean }) {
-  // Find the Monday of a given offset (0 = current week, 1 = next, ...)
-  function mondayOf(weekOffset: number): string {
+  function mondayOfOffset(weekOffset: number): string {
     const today = new Date();
     const day = today.getDay();
-    const diff = (day === 0 ? -6 : 1 - day) + weekOffset * 7; // Mon
+    const diff = (day === 0 ? -6 : 1 - day) + weekOffset * 7;
     const d = new Date(today);
     d.setDate(today.getDate() + diff);
     return toISODate(d);
   }
   const presets = [
-    { label: "This week", weekOf: mondayOf(0) },
-    { label: "Next week (driver schedule)", weekOf: mondayOf(1) },
-    { label: "+2 weeks (sign-up open)", weekOf: mondayOf(2) },
-    { label: "+3 weeks (planning)", weekOf: mondayOf(3) },
+    { label: "This week", weekOf: mondayOfOffset(0) },
+    { label: "Next week (driver schedule)", weekOf: mondayOfOffset(1) },
+    { label: "+2 weeks (sign-up open)", weekOf: mondayOfOffset(2) },
+    { label: "+3 weeks (planning)", weekOf: mondayOfOffset(3) },
   ];
   const [open, setOpen] = useState(false);
   return (
