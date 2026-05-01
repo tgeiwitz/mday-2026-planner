@@ -611,9 +611,24 @@ export async function updateGlobalSettings(
   }
 }
 
-export async function recalculateAllRoutes(opts: { triggeredBy?: string } = {}) {
+export type RecalcIntegrityReport = {
+  routesWithStopsButNoZonesRepaired: number; // routes where zones were just inferred & persisted
+  routesStillMissingZones: number;            // post-repair: should always be 0
+  routesWithZeroFee: number;                  // post-recalc: routes whose fee evaluated to $0
+  routesOnDurationFallback: number;            // routes whose duration used the 8-min/stop fallback (zones < stops)
+  inferredRouteIds: number[];
+};
+
+export async function recalculateAllRoutes(opts: { triggeredBy?: string } = {}): Promise<RecalcIntegrityReport> {
   const db = await getDb();
-  if (!db) return;
+  const empty: RecalcIntegrityReport = {
+    routesWithStopsButNoZonesRepaired: 0,
+    routesStillMissingZones: 0,
+    routesWithZeroFee: 0,
+    routesOnDurationFallback: 0,
+    inferredRouteIds: [],
+  };
+  if (!db) return empty;
   const settings = await getGlobalSettings();
   const driverPayPct = parseFloat(settings.driverPayPct);
   const mileagePayPerMile = parseFloat(settings.mileagePayPerMile);
@@ -651,11 +666,47 @@ export async function recalculateAllRoutes(opts: { triggeredBy?: string } = {}) 
   // route_zones.zoneId stores the business zone code (e.g. 602, 770), not the
   // zone_metrics PK. Key the lookup map by zoneId so recalc resolves.
   const zoneMap = new Map(allZones.map((z) => [z.zoneId, z]));
-  const allRouteZones = await db.select().from(routeZones);
-  const zonesByRoute = new Map<number, typeof allRouteZones>();
+  let allRouteZones = await db.select().from(routeZones);
+  let zonesByRoute = new Map<number, typeof allRouteZones>();
   for (const rz of allRouteZones) {
     if (!zonesByRoute.has(rz.routeId)) zonesByRoute.set(rz.routeId, []);
     zonesByRoute.get(rz.routeId)!.push(rz);
+  }
+
+  // ---- v44 PLANNING-CORRECTNESS GUARD ----
+  // Any route with stops>0 and no zones must have a zone mix BEFORE we compute fee/miles.
+  // Otherwise fee/miles/duration silently evaluate to zero. Auto-infer + persist now.
+  const integrity: RecalcIntegrityReport = {
+    routesWithStopsButNoZonesRepaired: 0,
+    routesStillMissingZones: 0,
+    routesWithZeroFee: 0,
+    routesOnDurationFallback: 0,
+    inferredRouteIds: [],
+  };
+  for (const r of allRoutes) {
+    if ((r.stops ?? 0) > 0 && (zonesByRoute.get(r.id)?.length ?? 0) === 0) {
+      try {
+        const repaired = await autoAssignZonesIfMissing(r.id);
+        if (repaired) {
+          integrity.routesWithStopsButNoZonesRepaired += 1;
+          integrity.inferredRouteIds.push(r.id);
+        }
+      } catch (e) {
+        console.error(`[recalc] auto-zone-infer failed for route ${r.id}`, e);
+      }
+    }
+  }
+  // Re-read route_zones if we repaired anything, so the loop below sees the new mix.
+  if (integrity.routesWithStopsButNoZonesRepaired > 0) {
+    allRouteZones = await db.select().from(routeZones);
+    zonesByRoute = new Map<number, typeof allRouteZones>();
+    for (const rz of allRouteZones) {
+      if (!zonesByRoute.has(rz.routeId)) zonesByRoute.set(rz.routeId, []);
+      zonesByRoute.get(rz.routeId)!.push(rz);
+    }
+    if (opts.triggeredBy) {
+      console.log(`[recalc:${opts.triggeredBy}] auto-inferred zone mixes for ${integrity.routesWithStopsButNoZonesRepaired} route(s)`);
+    }
   }
 
   const allTimeblocks = await db.select().from(timeblocks);
@@ -867,7 +918,15 @@ export async function recalculateAllRoutes(opts: { triggeredBy?: string } = {}) 
     }
 
     await db.update(routes).set(estUpdate).where(eq(routes.id, r.id));
+
+    // Integrity tally (post-recalc): which routes are still in degraded states?
+    if ((r.stops ?? 0) > 0 && (zonesByRoute.get(r.id)?.length ?? 0) === 0) {
+      integrity.routesStillMissingZones += 1;
+    }
+    if (fee <= 0) integrity.routesWithZeroFee += 1;
+    if (zoneStops < (r.stops ?? 0)) integrity.routesOnDurationFallback += 1;
   }
+  return integrity;
 }
 
 
@@ -1034,7 +1093,11 @@ export async function getWodelyFeeMap() {
   const db = await getDb();
   const map = new Map<string, { count: number; totalFee: number; avgFee: number }>();
   if (!db) return map;
-  const rows = await db.select().from(wodelyTaskCache);
+  const rows = await db.select({
+    deliveryDate: wodelyTaskCache.deliveryDate,
+    merchant: wodelyTaskCache.merchant,
+    taskFee: wodelyTaskCache.taskFee,
+  }).from(wodelyTaskCache);
   for (const r of rows) {
     const d = r.deliveryDate instanceof Date
       ? `${r.deliveryDate.getUTCFullYear()}-${String(r.deliveryDate.getUTCMonth() + 1).padStart(2, "0")}-${String(r.deliveryDate.getUTCDate()).padStart(2, "0")}`
@@ -1287,7 +1350,15 @@ export async function getZoneDistribution(startIso: string, endIso: string) {
   if (endYear >= 2026) {
     const s = startYear >= 2026 ? startIso : "2026-01-01";
     const e = endIso;
-    const rows = await db.select().from(wodelyTaskCache)
+    // Select only the columns we use, to avoid schema-drift on optional Wodely
+    // routing fields (routePlanId/routeSortId/routeName/driverName/taskStatusId)
+    // that may not yet exist in the deployed MySQL even though they're declared
+    // in the Drizzle schema.
+    const rows = await db.select({
+      zoneId: wodelyTaskCache.zoneId,
+      merchant: wodelyTaskCache.merchant,
+      taskFee: wodelyTaskCache.taskFee,
+    }).from(wodelyTaskCache)
       .where(_sql`${wodelyTaskCache.deliveryDate} >= ${s} AND ${wodelyTaskCache.deliveryDate} <= ${e}`);
     const grouped = new Map<string, { c: number; feeSum: number }>();
     for (const r of rows) {

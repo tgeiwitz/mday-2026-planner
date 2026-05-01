@@ -603,8 +603,37 @@ export const appRouter = router({
         return { success: true };
       }),
     recalculate: publicProcedure.mutation(async () => {
-      await db.recalculateAllRoutes();
-      return { success: true };
+      const integrity = await db.recalculateAllRoutes({ triggeredBy: "manual-recalculate" });
+      return { success: true, integrity };
+    }),
+    integrity: publicProcedure.query(async () => {
+      // Run a recalculate as a side-effect free dry-run? No — cheaper to just
+      // recompute the integrity counters from current DB state.
+      const all = await db.listRoutes();
+      const allRouteZones = await db.listAllRouteZones();
+      const zonesByRoute = new Map<number, number>();
+      for (const rz of allRouteZones) {
+        zonesByRoute.set(rz.routeId, (zonesByRoute.get(rz.routeId) ?? 0) + (rz.taskCount ?? 0));
+      }
+      let missingZones = 0;
+      let zeroFee = 0;
+      let durationFallback = 0;
+      const offenders: { id: number; routeCode: string; reason: string }[] = [];
+      for (const r of all) {
+        const zoneStops = zonesByRoute.get(r.id) ?? 0;
+        const stops = r.stops ?? 0;
+        const fee = Number(r.estRouteFee ?? 0);
+        if (stops > 0 && zoneStops === 0) {
+          missingZones += 1;
+          offenders.push({ id: r.id, routeCode: r.routeCode, reason: "zones-missing" });
+        }
+        if (stops > 0 && fee <= 0) {
+          zeroFee += 1;
+          offenders.push({ id: r.id, routeCode: r.routeCode, reason: "fee-zero" });
+        }
+        if (stops > 0 && zoneStops < stops) durationFallback += 1;
+      }
+      return { missingZones, zeroFee, durationFallback, offenders: offenders.slice(0, 20) };
     }),
     delete: publicProcedure
       .input(z.object({ id: z.number() }))

@@ -449,3 +449,15 @@ list of bugs.
 - [x] v42 zone-inference complete; reforecast populates without zone clicks
 - [x] v41 production smoke-test green; 35/37 vitest passing
 - [x] System ready for go-live decision
+
+
+## v44 Recalc-layer zone enforcement (planning correctness guard)
+
+- [x] Inject auto-inference INSIDE recalculateAllRoutes: any route with stops>0 and no zones gets a mix inferred + persisted before fee/miles/duration are computed
+- [x] Track which routes were just-inferred during a recalc pass; integrity report returned with inferredRouteIds, routesWithStopsButNoZonesRepaired, routesStillMissingZones, zeroFeeRoutes, durationFallbackRoutes
+- [x] Add Dashboard data-integrity tile (DataIntegrityTile component) showing missing zones / zero fee / duration fallback counts + Recalculate button + 30s auto-refresh
+- [x] `routes.recalculate` returns the integrity report; new `routes.integrity` tRPC query for read-only health probing
+- [x] Vitest server/recalc-zone-guard.test.ts: setRouteZones([]) on a stops>0 route triggers recalc which auto-re-infers zones, fee>0, duration>0, routesStillMissingZones=0
+- [x] Fixed schema-drift on getZoneDistribution + getWodelyFeeMap (narrowed select() so missing routePlanId/routeSortId/routeName/driverName/taskStatusId in deployed MySQL no longer breaks queries)
+- [x] All 36/38 tests passing (2 legacy skipped)
+- [x] Final checkpoint

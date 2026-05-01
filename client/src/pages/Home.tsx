@@ -7,6 +7,7 @@ import { trpc } from "@/lib/trpc";
 import { Flower, TrendingUp, AlertCircle, CheckCircle2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { fmtDateShort, dayName, toISODate } from "@/lib/date";
+import { DataIntegrityTile } from "@/components/DataIntegrityTile";
 
 type ForecastRow = {
   id: number;
@@ -506,6 +507,8 @@ export default function Home() {
             </CardContent>
           </Card>
         </div>
+
+        <DataIntegrityTile />
 
         {/* Daily Planning Table — Budget vs 2025 Actual vs Confirmed vs Routes Needed */}
         <PlanningPanel />
