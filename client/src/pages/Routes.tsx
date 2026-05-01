@@ -199,9 +199,11 @@ export default function Routes() {
                 Each row is inline-editable; expand for zone assignment.
               </p>
             </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <AutoCreateRoutesButton />
             <Dialog open={newRouteOpen} onOpenChange={setNewRouteOpen}>
               <DialogTrigger asChild>
-                <Button className="shrink-0"><Plus className="h-4 w-4 mr-2" /> New Route</Button>
+                <Button><Plus className="h-4 w-4 mr-2" /> New Route</Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
@@ -273,6 +275,7 @@ export default function Routes() {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-3 mt-4 items-center">
@@ -625,6 +628,20 @@ export default function Routes() {
                                 </div>
                               )}
                               <ReferenceForecastPanel routeId={r.id} currentStops={r.stops} onApplied={() => { refetch(); utils.planning.list.invalidate(); }} />
+                              <div className="mt-4">
+                                <label className="text-xs uppercase tracking-wider text-muted-foreground">Internal Notes (dispatch only)</label>
+                                <textarea
+                                  className="mt-1 w-full min-h-[60px] rounded-md border border-border bg-background p-2 text-sm focus:border-ring outline-none"
+                                  placeholder="Notes for dispatch only — vehicle issues, special handoffs, etc. Does not affect any math."
+                                  defaultValue={(r as any).notes ?? ""}
+                                  onBlur={(e) => {
+                                    const val = e.target.value;
+                                    if (val !== ((r as any).notes ?? "")) {
+                                      update.mutate({ id: r.id, notes: val });
+                                    }
+                                  }}
+                                />
+                              </div>
                             </div>
                           </td>
                         </tr>
@@ -685,6 +702,66 @@ function ReferenceForecastPanel({ routeId, currentStops, onApplied }: { routeId:
       <p className="text-[11px] text-muted-foreground mt-2">
         Holiday differential is per-route only — set it in the row above. Historical holiday $/stop is not yet stored; once it is, an &ldquo;Use 2025 holiday rate&rdquo; button will appear here.
       </p>
+    </div>
+  );
+}
+
+function AutoCreateRoutesButton() {
+  const utils = trpc.useUtils();
+  const autoForDate = trpc.routes.autoCreateForDate.useMutation({
+    onSuccess: (r: any) => {
+      utils.routes.list.invalidate();
+      utils.timeblocks.list.invalidate();
+      utils.planning.list.invalidate();
+      toast.success(`Created ${r.created} route${r.created === 1 ? "" : "s"} · skipped ${r.skipped}`);
+    },
+    onError: (e) => toast.error(e.message ?? "Auto-create failed"),
+  });
+  const [open, setOpen] = useState(false);
+  function dateOffset(daysAhead: number): string {
+    const d = new Date();
+    d.setDate(d.getDate() + daysAhead);
+    return toISODate(d);
+  }
+  const presets = [
+    { label: "Today", date: dateOffset(0) },
+    { label: "Tomorrow", date: dateOffset(1) },
+    { label: "+7 days", date: dateOffset(7) },
+    { label: "+14 days (sign-up open)", date: dateOffset(14) },
+    { label: "+21 days (planning)", date: dateOffset(21) },
+  ];
+  return (
+    <div className="relative">
+      <Button variant="outline" disabled={autoForDate.isPending} onClick={() => setOpen((o) => !o)}>
+        <Plus className="h-4 w-4 mr-2" /> Auto-Create Routes
+      </Button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-50 bg-background border border-border rounded-md shadow-lg w-[280px]">
+          {presets.map((p) => (
+            <button
+              key={p.date}
+              className="w-full text-left text-sm px-3 py-2 hover:bg-muted flex items-center justify-between"
+              onClick={() => { autoForDate.mutate({ date: p.date }); setOpen(false); }}
+            >
+              <span>{p.label}</span>
+              <span className="text-[11px] font-mono text-muted-foreground">{p.date}</span>
+            </button>
+          ))}
+          <div className="border-t border-border p-2">
+            <input
+              type="date"
+              className="w-full text-sm h-8 px-2 border border-border rounded bg-background"
+              onChange={(e) => {
+                if (e.target.value) {
+                  autoForDate.mutate({ date: e.target.value });
+                  setOpen(false);
+                }
+              }}
+            />
+            <p className="text-[10px] text-muted-foreground mt-1">Generates one placeholder route per timeblock for the chosen date (uses each timeblock's targetRoutes setting).</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

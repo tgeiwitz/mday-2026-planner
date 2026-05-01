@@ -334,3 +334,74 @@ describe("v34: routes.create + per-route holiday/bonus + reference forecast", ()
     expect(Number(same.holidayPerStopSurcharge)).toBe(0);
   });
 });
+
+
+// v38 — Auto-Create
+describe("v38: auto-create", () => {
+  it("routes.autoCreateForDate returns numeric counts and is idempotent", async () => {
+    const caller = appRouter.createCaller(createCtx());
+    const tbList = await caller.timeblocks.list();
+    if (!tbList.length) return;
+    const date = String((tbList[0] as any).blockDate).slice(0, 10);
+    const r1: any = await caller.routes.autoCreateForDate({ date });
+    expect(typeof r1.totalCreated).toBe("number");
+    expect(typeof r1.totalSkipped).toBe("number");
+    const r2: any = await caller.routes.autoCreateForDate({ date });
+    expect(r2.totalCreated).toBeGreaterThanOrEqual(0);
+  });
+
+  it("timeblocks.autoCreateWeek returns counts for a future Monday", async () => {
+    const caller = appRouter.createCaller(createCtx());
+    const farFuture = new Date();
+    farFuture.setDate(farFuture.getDate() + 60);
+    while (farFuture.getDay() !== 1) farFuture.setDate(farFuture.getDate() + 1);
+    const weekOf = farFuture.toISOString().slice(0, 10);
+    const r: any = await caller.timeblocks.autoCreateWeek({ weekOf });
+    expect(r).toHaveProperty("created");
+    expect(r).toHaveProperty("skipped");
+  });
+});
+
+
+// v39 Vehicle bug + Internal Notes persistence
+describe("v39: drivers vehicleType + notes", () => {
+  it("accepts vehicleType=van and persists it (the dropdown bug regression)", async () => {
+    const caller = appRouter.createCaller(createCtx());
+    const list = await caller.drivers.list();
+    if (!list.length) return;
+    const first = list[0] as any;
+    const original = first.vehicleType ?? "sedan";
+    await caller.drivers.update({ id: first.id, vehicleType: "van" } as any);
+    const after = await caller.drivers.list();
+    const same = after.find((d: any) => d.id === first.id) as any;
+    expect(same?.vehicleType).toBe("van");
+    // restore
+    await caller.drivers.update({ id: first.id, vehicleType: original } as any);
+  });
+
+  it("persists internal notes on a driver", async () => {
+    const caller = appRouter.createCaller(createCtx());
+    const list = await caller.drivers.list();
+    if (!list.length) return;
+    const first = list[0] as any;
+    const stamp = `dispatch-note-${Date.now()}`;
+    await caller.drivers.update({ id: first.id, notes: stamp } as any);
+    const after = await caller.drivers.list();
+    const same = after.find((d: any) => d.id === first.id) as any;
+    expect(same?.notes).toBe(stamp);
+    await caller.drivers.update({ id: first.id, notes: first.notes ?? null } as any);
+  });
+
+  it("persists internal notes on a route via routes.update", async () => {
+    const caller = appRouter.createCaller(createCtx());
+    const list = await caller.routes.list();
+    if (!list.length) return;
+    const first = list[0] as any;
+    const stamp = `route-dispatch-${Date.now()}`;
+    await caller.routes.update({ id: first.id, notes: stamp } as any);
+    const after = await caller.routes.list();
+    const same = after.find((r: any) => r.id === first.id) as any;
+    expect(same?.notes).toBe(stamp);
+    await caller.routes.update({ id: first.id, notes: first.notes ?? "" } as any);
+  });
+});

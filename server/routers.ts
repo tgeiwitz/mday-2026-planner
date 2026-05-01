@@ -112,6 +112,7 @@ export const appRouter = router({
           targetDuration: z.number().int().nullable().optional(),
           targetStops: z.number().int().nullable().optional(),
           vehicleType: z.enum(["sedan", "van"]).optional(),
+          notes: z.string().nullable().optional(),
         })
       )
       .mutation(async ({ input }) => {

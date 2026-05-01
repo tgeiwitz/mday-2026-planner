@@ -337,3 +337,26 @@
 - [x] Routes: replaced Selects in the New Route dialog (Timeblock, Merchant, Booking) with InlineEnumInput
 - [x] Timeblocks: replaced Merchant + Booking Selects in the editor and the inline "Assign driver" Select with InlineEnumInput
 - [x] Tests still pass (27/27 + 2 skipped) after the refactor
+
+
+## v37 Number/text inputs are plain (enums may stay typeahead)
+- [ ] Audit Routes inline cells: stops, holidayPerStopSurcharge, bonus, hourlyTargetMin/Max overrides — plain Input type=number
+- [ ] Audit Drivers cells: hourlyTargetMin/Max, timePerStopDiff, payPctOverride — plain Input type=number
+- [ ] Audit Timeblocks editor: targetRoutes, mileageRate, estRoutePay, estDuration, bonus, minPayFloor, maxPayFloor, pickupDwell — plain Input type=number
+- [ ] New Route dialog: stops field stays plain
+- [ ] Confirm enum dropdowns are intact for vehicle, merchant, status, bookingType
+- [ ] Tests still pass after audit
+
+## v38 Auto-Create UI + rolling-window operating model
+- [x] timeblocks.autoCreateWeek mutation wired (+ button on Timeblocks header)
+- [ ] routes.autoCreateForTimeblock + autoCreateForDate UI buttons (Routes page)
+- [ ] Rolling-window tabs on Timeblocks (This week / Next / +2 / +3) and Routes
+- [ ] Dashboard rolling-window summary widget
+
+
+## v39 Vehicle bug + Internal Notes
+- [ ] Fix Drivers vehicle picker — should show exactly sedan and van (no duplicate, no missing)
+- [ ] Add internalNotes column to drivers schema + UI text area
+- [ ] Surface internal Notes text area on Timeblocks editor (column already exists)
+- [ ] Surface internal Notes text area on Routes expanded row (column already exists)
+- [ ] Vitest: drivers.update accepts internalNotes; persists round-trip

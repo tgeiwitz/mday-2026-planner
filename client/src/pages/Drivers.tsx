@@ -1,7 +1,6 @@
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { TypeAhead } from "@/components/TypeAhead";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
@@ -86,12 +85,14 @@ export default function Drivers() {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs uppercase tracking-wider text-muted-foreground">Vehicle</label>
-                    <TypeAhead
+                    <select
+                      className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                       value={newDriver.vehicleType}
-                      options={VEHICLE_OPTIONS}
-                      strict
-                      onCommit={(v) => v && setNewDriver({ ...newDriver, vehicleType: v as any })}
-                    />
+                      onChange={(e) => setNewDriver({ ...newDriver, vehicleType: e.target.value as "sedan" | "van" })}
+                    >
+                      <option value="sedan">Sedan (×0.80)</option>
+                      <option value="van">Van (×1.10)</option>
+                    </select>
                   </div>
                   <div>
                     <label className="text-xs uppercase tracking-wider text-muted-foreground">
@@ -139,6 +140,7 @@ export default function Drivers() {
                 <th className="text-right" title="Hourly target floor. Driver Pay must end up at or above this × estimated hours. If short, a Wodely workforce-task adjustment grosses it up.">Hourly Min</th>
                 <th className="text-right" title="Hourly target ceiling. Driver Pay caps at this × estimated hours; surplus stays in the platform 25%.">Hourly Max</th>
                 <th className="text-right" title="Per-driver minutes added (or subtracted) to the per-stop time baseline. New drivers usually +0.5–1 min.">Time/Stop Diff</th>
+                <th>Internal Notes</th>
                 <th></th>
               </tr>
             </thead>
@@ -159,13 +161,17 @@ export default function Drivers() {
                       <Badge className={`${vehicleBadge((d as any).vehicleType)} font-normal`}>
                         {(d as any).vehicleType === "van" ? "Van" : "Sedan"}
                       </Badge>
-                      <TypeAhead
-                        className="w-[130px]"
+                      <select
+                        className="h-8 w-[110px] rounded-md border border-transparent hover:border-border bg-transparent px-2 text-sm focus:border-ring"
                         value={(d as any).vehicleType ?? "sedan"}
-                        options={VEHICLE_OPTIONS}
-                        strict
-                        onCommit={(v) => v && v !== (d as any).vehicleType && update.mutate({ id: d.id, vehicleType: v as any })}
-                      />
+                        onChange={(e) => {
+                          const v = e.target.value as "sedan" | "van";
+                          if (v !== (d as any).vehicleType) update.mutate({ id: d.id, vehicleType: v as any });
+                        }}
+                      >
+                        <option value="sedan">Sedan</option>
+                        <option value="van">Van</option>
+                      </select>
                     </div>
                   </td>
                   <td className="text-right">
@@ -218,6 +224,17 @@ export default function Drivers() {
                       step="0.5"
                       defaultValue={String(d.timePerStopDiff)}
                       onBlur={(e) => update.mutate({ id: d.id, timePerStopDiff: e.target.value })}
+                    />
+                  </td>
+                  <td>
+                    <Input
+                      className="h-8 min-w-[180px] border-transparent bg-transparent hover:border-border focus:border-ring text-xs"
+                      placeholder="Dispatch notes (e.g. prefers AM, has spare van keys, off Tue)…"
+                      defaultValue={(d as any).notes ?? ""}
+                      onBlur={(e) => {
+                        const val = e.target.value;
+                        if (val !== ((d as any).notes ?? "")) update.mutate({ id: d.id, notes: val } as any);
+                      }}
                     />
                   </td>
                   <td className="text-right">

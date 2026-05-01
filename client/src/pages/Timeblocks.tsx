@@ -90,6 +90,13 @@ export default function Timeblocks() {
     onSuccess: () => { invalidate(); toast.success("Timeblock created"); setEditor(null); },
     onError: (e) => toast.error(e.message),
   });
+  const autoCreateWeek = trpc.timeblocks.autoCreateWeek.useMutation({
+    onSuccess: (r: any) => {
+      invalidate();
+      toast.success(`Created ${r.created} · skipped ${r.skipped}`);
+    },
+    onError: (e) => toast.error(e.message),
+  });
   const updateBlock = trpc.timeblocks.update.useMutation({
     onSuccess: () => { invalidate(); },
     onError: (e) => toast.error(e.message),
@@ -207,9 +214,12 @@ export default function Timeblocks() {
                 Flex blocks can carry mixed merchants; Direct blocks are single-merchant.
               </p>
             </div>
-            <Button onClick={() => openCreate()} className="shrink-0">
-              <Plus className="h-4 w-4 mr-1.5" /> New timeblock
-            </Button>
+            <div className="flex items-center gap-2 shrink-0">
+              <AutoCreateWeekButton onCreate={(weekOf) => autoCreateWeek.mutate({ weekOf })} pending={autoCreateWeek.isPending} />
+              <Button onClick={() => openCreate()}>
+                <Plus className="h-4 w-4 mr-1.5" /> New timeblock
+              </Button>
+            </div>
           </div>
         </div>
       </div>
@@ -507,10 +517,13 @@ export default function Timeblocks() {
                 <Input type="number" min={0} value={editor.form.estDuration}
                   onChange={(e) => setEditor({ ...editor, form: { ...editor.form, estDuration: parseInt(e.target.value) || 0 } })} />
               </Field>
-              <Field label="Notes" full>
-                <Input value={editor.form.notes}
+              <Field label="Internal Notes (dispatch only)" full>
+                <textarea
+                  className="w-full min-h-[60px] rounded-md border border-input bg-background p-2 text-sm focus:border-ring outline-none"
+                  value={editor.form.notes}
                   onChange={(e) => setEditor({ ...editor, form: { ...editor.form, notes: e.target.value } })}
-                  placeholder="Optional internal note" />
+                  placeholder="Notes for dispatch only — staffing, special handoffs, vehicle requirements, etc. Does not affect any math."
+                />
               </Field>
             </div>
           )}
@@ -559,6 +572,62 @@ function Field({ label, children, full }: { label: string; children: React.React
     <div className={full ? "col-span-2" : ""}>
       <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</Label>
       <div className="mt-1">{children}</div>
+    </div>
+  );
+}
+
+function AutoCreateWeekButton({ onCreate, pending }: { onCreate: (weekOf: string) => void; pending: boolean }) {
+  // Find the Monday of a given offset (0 = current week, 1 = next, ...)
+  function mondayOf(weekOffset: number): string {
+    const today = new Date();
+    const day = today.getDay();
+    const diff = (day === 0 ? -6 : 1 - day) + weekOffset * 7; // Mon
+    const d = new Date(today);
+    d.setDate(today.getDate() + diff);
+    return toISODate(d);
+  }
+  const presets = [
+    { label: "This week", weekOf: mondayOf(0) },
+    { label: "Next week (driver schedule)", weekOf: mondayOf(1) },
+    { label: "+2 weeks (sign-up open)", weekOf: mondayOf(2) },
+    { label: "+3 weeks (planning)", weekOf: mondayOf(3) },
+  ];
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <Button variant="outline" disabled={pending} onClick={() => setOpen((o) => !o)}>
+        <Plus className="h-4 w-4 mr-1.5" /> Auto-Create Week
+      </Button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-50 bg-background border border-border rounded-md shadow-lg w-[260px]">
+          {presets.map((p) => (
+            <button
+              key={p.weekOf}
+              className="w-full text-left text-sm px-3 py-2 hover:bg-muted flex items-center justify-between"
+              onClick={() => {
+                onCreate(p.weekOf);
+                setOpen(false);
+              }}
+            >
+              <span>{p.label}</span>
+              <span className="text-[11px] font-mono text-muted-foreground">{p.weekOf}</span>
+            </button>
+          ))}
+          <div className="border-t border-border p-2">
+            <input
+              type="date"
+              className="w-full text-sm h-8 px-2 border border-border rounded bg-background"
+              onChange={(e) => {
+                if (e.target.value) {
+                  onCreate(e.target.value);
+                  setOpen(false);
+                }
+              }}
+            />
+            <p className="text-[10px] text-muted-foreground mt-1">Pick any Monday for a custom week.</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
