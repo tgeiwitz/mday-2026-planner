@@ -13,6 +13,7 @@ import Routes from "./pages/Routes";
 import Scenarios from "./pages/Scenarios";
 import Settings from "./pages/Settings";
 import Snapshots from "./pages/Snapshots";
+import Profitability from "./pages/Profitability";
 import MerchantShare from "./pages/MerchantShare";
 import DriverSignup from "./pages/DriverSignup";
 
@@ -27,6 +28,7 @@ function DashboardRouter() {
       <Route path="/scenarios" component={Scenarios} />
       <Route path="/settings" component={Settings} />
       <Route path="/snapshots" component={Snapshots} />
+      <Route path="/profitability" component={Profitability} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

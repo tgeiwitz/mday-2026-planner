@@ -1,15 +1,19 @@
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { TypeAhead } from "@/components/TypeAhead";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
+
+const STATUS_OPTIONS = [
+  { value: "Confirmed", label: "Confirmed" },
+  { value: "Pending", label: "Pending" },
+  { value: "Placeholder", label: "Placeholder" },
+];
+const TYPE_OPTIONS = [
+  { value: "Lead", label: "Lead" },
+  { value: "New", label: "New" },
+];
 import { useState } from "react";
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
@@ -87,30 +91,21 @@ export default function Drivers() {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs uppercase tracking-wider text-muted-foreground">Status</label>
-                    <Select
+                    <TypeAhead
                       value={newDriver.status}
-                      onValueChange={(v) => setNewDriver({ ...newDriver, status: v as any })}
-                    >
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Confirmed">Confirmed</SelectItem>
-                        <SelectItem value="Pending">Pending</SelectItem>
-                        <SelectItem value="Placeholder">Placeholder</SelectItem>
-                      </SelectContent>
-                    </Select>
+                      options={STATUS_OPTIONS}
+                      strict
+                      onCommit={(v) => v && setNewDriver({ ...newDriver, status: v as any })}
+                    />
                   </div>
                   <div>
                     <label className="text-xs uppercase tracking-wider text-muted-foreground">Type</label>
-                    <Select
+                    <TypeAhead
                       value={newDriver.driverType}
-                      onValueChange={(v) => setNewDriver({ ...newDriver, driverType: v as any })}
-                    >
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Lead">Lead</SelectItem>
-                        <SelectItem value="New">New</SelectItem>
-                      </SelectContent>
-                    </Select>
+                      options={TYPE_OPTIONS}
+                      strict
+                      onCommit={(v) => v && setNewDriver({ ...newDriver, driverType: v as any })}
+                    />
                   </div>
                 </div>
                 <div>
@@ -161,31 +156,25 @@ export default function Drivers() {
                     />
                   </td>
                   <td>
-                    <Select
-                      value={d.status}
-                      onValueChange={(v) => update.mutate({ id: d.id, status: v as any })}
-                    >
-                      <SelectTrigger className="h-8 w-[130px]">
-                        <Badge className={`${statusBadge(d.status)} font-normal`}>{d.status}</Badge>
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Confirmed">Confirmed</SelectItem>
-                        <SelectItem value="Pending">Pending</SelectItem>
-                        <SelectItem value="Placeholder">Placeholder</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <div className="flex items-center gap-2">
+                      <Badge className={`${statusBadge(d.status)} font-normal`}>{d.status}</Badge>
+                      <TypeAhead
+                        className="w-[130px]"
+                        value={d.status}
+                        options={STATUS_OPTIONS}
+                        strict
+                        onCommit={(v) => v && v !== d.status && update.mutate({ id: d.id, status: v as any })}
+                      />
+                    </div>
                   </td>
                   <td>
-                    <Select
+                    <TypeAhead
+                      className="w-[110px]"
                       value={d.driverType}
-                      onValueChange={(v) => update.mutate({ id: d.id, driverType: v as any })}
-                    >
-                      <SelectTrigger className="h-8 w-[110px]"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Lead">Lead</SelectItem>
-                        <SelectItem value="New">New</SelectItem>
-                      </SelectContent>
-                    </Select>
+                      options={TYPE_OPTIONS}
+                      strict
+                      onCommit={(v) => v && v !== d.driverType && update.mutate({ id: d.id, driverType: v as any })}
+                    />
                   </td>
                   <td className="text-right">
                     <Input

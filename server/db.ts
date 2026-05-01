@@ -539,8 +539,17 @@ export async function recalculateAllRoutes(opts: { triggeredBy?: string } = {}) 
         feeMode = "blended";
       }
     }
-    if (holidayEnabled) fee += holidayPerStop * r.stops;
+    // Holiday differential: per-route override wins; otherwise global surcharge when toggle is on.
+    const routeHolidayPerStop = r.holidayPerStopSurcharge ? parseFloat(String(r.holidayPerStopSurcharge)) : 0;
+    if (routeHolidayPerStop > 0) {
+      fee += routeHolidayPerStop * r.stops;
+    } else if (holidayEnabled) {
+      fee += holidayPerStop * r.stops;
+    }
     let driverPay = fee * driverPayPct;
+    // Per-route driver bonus is additive to driver pay (after pct, before floor/max).
+    const routeBonus = r.driverBonus ? parseFloat(String(r.driverBonus)) : 0;
+    if (routeBonus > 0) driverPay += routeBonus;
     // Apply floor/max: route-level override wins over timeblock default
     const tb = tbMap.get(r.timeblockId);
     const floor = r.payFloorOverride ? parseFloat(String(r.payFloorOverride)) : tb ? parseFloat(String(tb.minPayFloor)) : 0;
@@ -625,7 +634,8 @@ export async function captureSnapshot(triggerType: "auto" | "manual", label?: st
   for (const r of allRoutes) {
     totalRoutes += 1;
     totalRevenue += Number(r.estRouteFee);
-    totalDriverPay += Number(r.estDriverPay) + Number(r.estMileagePay) + Number(r.driverBonus);
+    // estDriverPay already includes per-route driverBonus after recalculateAllRoutes; add mileage pay only here.
+    totalDriverPay += Number(r.estDriverPay) + Number(r.estMileagePay);
   }
 
   const res = await db.insert(snapshotRuns).values({
@@ -655,7 +665,8 @@ export async function captureSnapshot(triggerType: "auto" | "manual", label?: st
     row.planned += 1;
     if (["Confirmed", "Processed", "Routed", "Completed"].includes(r.status)) row.confirmed += 1;
     row.revenue += Number(r.estRouteFee);
-    row.driverPay += Number(r.estDriverPay) + Number(r.estMileagePay) + Number(r.driverBonus);
+    // estDriverPay already includes per-route driverBonus.
+    row.driverPay += Number(r.estDriverPay) + Number(r.estMileagePay);
   }
 
   const snapRows: Array<typeof forecastSnapshots.$inferInsert> = [];
@@ -1388,4 +1399,225 @@ export async function createDriverSignup(input: {
     notes: input.notes ?? null,
   } as any);
   return { success: true };
+}
+
+
+// ---------- Wodely Sync Metadata ----------
+const WODELY_LAST_SYNC_KEY = "wodelyLastSyncedAt";
+const WODELY_LAST_SYNC_SUMMARY_KEY = "wodelyLastSyncSummary";
+
+export async function setWodelyLastSync(summary: {
+  syncedDates: number;
+  totalTasks: number;
+}) {
+  const db = await getDb();
+  if (!db) return;
+  const ts = new Date().toISOString();
+  for (const [key, value] of [
+    [WODELY_LAST_SYNC_KEY, ts],
+    [WODELY_LAST_SYNC_SUMMARY_KEY, JSON.stringify(summary)],
+  ] as const) {
+    await db
+      .insert(globalSettings)
+      .values({ settingKey: key, settingValue: value })
+      .onDuplicateKeyUpdate({ set: { settingValue: value } });
+  }
+  return ts;
+}
+
+export async function getWodelyLastSync(): Promise<{
+  lastSyncedAt: string | null;
+  syncedDates: number;
+  totalTasks: number;
+}> {
+  const db = await getDb();
+  if (!db) return { lastSyncedAt: null, syncedDates: 0, totalTasks: 0 };
+  const rows = await db
+    .select()
+    .from(globalSettings)
+    .where(_sql`${globalSettings.settingKey} IN (${WODELY_LAST_SYNC_KEY}, ${WODELY_LAST_SYNC_SUMMARY_KEY})`);
+  let lastSyncedAt: string | null = null;
+  let syncedDates = 0;
+  let totalTasks = 0;
+  for (const r of rows) {
+    if (r.settingKey === WODELY_LAST_SYNC_KEY) lastSyncedAt = r.settingValue;
+    if (r.settingKey === WODELY_LAST_SYNC_SUMMARY_KEY) {
+      try {
+        const parsed = JSON.parse(r.settingValue);
+        syncedDates = Number(parsed.syncedDates) || 0;
+        totalTasks = Number(parsed.totalTasks) || 0;
+      } catch {
+        // ignore
+      }
+    }
+  }
+  return { lastSyncedAt, syncedDates, totalTasks };
+}
+
+
+// ---------- Profitability Rollup ----------
+export type ProfitabilityDay = {
+  date: string; // ISO yyyy-mm-dd
+  dayName: string;
+  weekStart: string; // ISO Monday for that date
+  routes: number;
+  stops: number;
+  revenue: number; // estRouteFee total (already includes per-route holiday)
+  holidayDiff: number; // holiday $ × stops, summed
+  driverPay: number; // estDriverPay total (already includes per-route bonus)
+  bonus: number; // sum of driverBonus
+  mileagePay: number; // estMileagePay total
+  platformFee: number; // estPlatformFee total
+  margin: number; // revenue − driverPay − mileagePay − platformFee
+};
+
+export type ProfitabilityWeek = {
+  weekStart: string;
+  weekEnd: string;
+  days: ProfitabilityDay[];
+  totals: Omit<ProfitabilityDay, "date" | "dayName" | "weekStart">;
+};
+
+function isoUTC(d: Date): string {
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+function mondayOf(iso: string): string {
+  // Treat as UTC-noon to dodge DST drift, then walk back to Monday.
+  const d = new Date(iso + "T12:00:00Z");
+  const dow = d.getUTCDay(); // 0=Sun..6=Sat
+  const offset = dow === 0 ? -6 : 1 - dow;
+  d.setUTCDate(d.getUTCDate() + offset);
+  return isoUTC(d);
+}
+
+function addDaysIso(iso: string, n: number): string {
+  const d = new Date(iso + "T12:00:00Z");
+  d.setUTCDate(d.getUTCDate() + n);
+  return isoUTC(d);
+}
+
+function dayNameOf(iso: string): string {
+  const d = new Date(iso + "T12:00:00Z");
+  return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getUTCDay()];
+}
+
+export async function getProfitabilityRollup(): Promise<{
+  days: ProfitabilityDay[];
+  weeks: ProfitabilityWeek[];
+  totals: Omit<ProfitabilityDay, "date" | "dayName" | "weekStart">;
+}> {
+  const allRoutes = await listRoutes();
+  const tbs = await listTimeblocks();
+  const tbDate = new Map<number, string>();
+  for (const tb of tbs) {
+    const d = tb.blockDate;
+    const iso = d instanceof Date ? isoUTC(d) : String(d).slice(0, 10);
+    tbDate.set(tb.id, iso);
+  }
+
+  const byDay = new Map<string, ProfitabilityDay>();
+  for (const r of allRoutes) {
+    const iso = tbDate.get(r.timeblockId);
+    if (!iso) continue;
+    if (!byDay.has(iso)) {
+      byDay.set(iso, {
+        date: iso,
+        dayName: dayNameOf(iso),
+        weekStart: mondayOf(iso),
+        routes: 0,
+        stops: 0,
+        revenue: 0,
+        holidayDiff: 0,
+        driverPay: 0,
+        bonus: 0,
+        mileagePay: 0,
+        platformFee: 0,
+        margin: 0,
+      });
+    }
+    const row = byDay.get(iso)!;
+    const fee = Number(r.estRouteFee);
+    const driverPay = Number(r.estDriverPay);
+    const mileagePay = Number(r.estMileagePay);
+    const platform = Number(r.estPlatformFee);
+    const bonus = Number(r.driverBonus) || 0;
+    const holiday = (Number(r.holidayPerStopSurcharge) || 0) * r.stops;
+    row.routes += 1;
+    row.stops += r.stops;
+    row.revenue += fee;
+    row.holidayDiff += holiday;
+    row.driverPay += driverPay;
+    row.bonus += bonus;
+    row.mileagePay += mileagePay;
+    row.platformFee += platform;
+    row.margin += fee - driverPay - mileagePay - platform;
+  }
+
+  const days = Array.from(byDay.values()).sort((a, b) => (a.date < b.date ? -1 : 1));
+
+  // Group into weeks (Mon..Sun)
+  const weekMap = new Map<string, ProfitabilityWeek>();
+  for (const d of days) {
+    if (!weekMap.has(d.weekStart)) {
+      weekMap.set(d.weekStart, {
+        weekStart: d.weekStart,
+        weekEnd: addDaysIso(d.weekStart, 6),
+        days: [],
+        totals: {
+          routes: 0,
+          stops: 0,
+          revenue: 0,
+          holidayDiff: 0,
+          driverPay: 0,
+          bonus: 0,
+          mileagePay: 0,
+          platformFee: 0,
+          margin: 0,
+        },
+      });
+    }
+    const w = weekMap.get(d.weekStart)!;
+    w.days.push(d);
+    w.totals.routes += d.routes;
+    w.totals.stops += d.stops;
+    w.totals.revenue += d.revenue;
+    w.totals.holidayDiff += d.holidayDiff;
+    w.totals.driverPay += d.driverPay;
+    w.totals.bonus += d.bonus;
+    w.totals.mileagePay += d.mileagePay;
+    w.totals.platformFee += d.platformFee;
+    w.totals.margin += d.margin;
+  }
+  const weeks = Array.from(weekMap.values()).sort((a, b) =>
+    a.weekStart < b.weekStart ? -1 : 1
+  );
+
+  const totals = days.reduce(
+    (acc, d) => {
+      acc.routes += d.routes;
+      acc.stops += d.stops;
+      acc.revenue += d.revenue;
+      acc.holidayDiff += d.holidayDiff;
+      acc.driverPay += d.driverPay;
+      acc.bonus += d.bonus;
+      acc.mileagePay += d.mileagePay;
+      acc.platformFee += d.platformFee;
+      acc.margin += d.margin;
+      return acc;
+    },
+    {
+      routes: 0,
+      stops: 0,
+      revenue: 0,
+      holidayDiff: 0,
+      driverPay: 0,
+      bonus: 0,
+      mileagePay: 0,
+      platformFee: 0,
+      margin: 0,
+    }
+  );
+
+  return { days, weeks, totals };
 }

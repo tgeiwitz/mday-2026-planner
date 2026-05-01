@@ -226,3 +226,28 @@
 - [x] Backfill missing wodely_task_cache route columns (production was missing routePlanId/routeSortId/routeName/driverName/taskStatusId)
 - [x] Vitest coverage for new endpoints (server/sprint.test.ts — 6 tests)
 - [x] Single checkpoint at end
+
+## v26 Dashboard Sync Status
+- [x] Persist last successful Wodely sync timestamp + summary in `global_settings`
+- [x] Expose `wodely.lastSync` tRPC query
+- [x] Dashboard badge: green (≤15m), amber (≤60m), red (>60m), or amber "Never synced" — ticks every 30s, refetches every 60s
+- [x] Vitest for `wodely.lastSync` shape (sprint.test.ts)
+
+
+## v27 Type-to-edit Inputs (replace selectors)
+- [ ] Routes page: type-to-edit driver assignment (autocomplete by name), status, merchant, bookingType
+- [ ] Timeblocks page: type-to-edit merchant, bookingType (datalist)
+- [ ] Drivers page: type-to-edit status, type
+- [ ] Settings: editable text fields (already mostly text — verify travelTimeSource is datalist)
+- [ ] Zone Metrics: per-zone travelTimeSource as datalist input
+- [ ] Daily Planning copy-blurb stays unchanged
+- [ ] Vitest sanity for one converted endpoint (driver assignment by name)
+
+
+## v28 Per-route Bonus + Holiday Diff visible & editable + Weekly Profitability
+- [x] Routes page: dedicated columns for Holiday $/stop and Driver Bonus, inline editable, recalc on commit
+- [x] Routes page: Net Margin column per route (revenue + holiday×stops − driver pay − bonus − mileage − platform), color-coded
+- [x] Per-route holiday differential overrides the global surcharge in fee math; per-route bonus folds into estDriverPay (no double-count in snapshots)
+- [x] Backend: `profitability.rollup` query returns days, weeks (Mon–Sun), and totals
+- [x] New Profitability page in sidebar showing summary cards + per-week tables with day rows and week totals
+- [x] Vitest covers shape, margin invariant, and weekStart=Monday (sprint.test.ts — 2 new tests; 9/9 pass)

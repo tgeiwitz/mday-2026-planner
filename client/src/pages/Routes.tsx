@@ -277,14 +277,16 @@ export default function Routes() {
                   <th className="text-right">Max</th>
                   <th className="text-right">Mileage</th>
                   <th className="text-right">Platform</th>
-                  <th className="text-right">Bonus</th>
+                  <th className="text-right" title="Per-stop holiday surcharge added to route fee">Holiday $/stop</th>
+                  <th className="text-right" title="Flat driver bonus added to driver pay">Driver Bonus</th>
+                  <th className="text-right" title="Net = Fee (incl. Holiday) − Driver Pay (incl. Bonus) − Mileage Pay − Platform Fee">Net Margin</th>
                   <th>Status</th>
                 </tr>
               </thead>
               <tbody>
                 {sorted.length === 0 && (
                   <tr>
-                    <td colSpan={17} className="text-center text-muted-foreground py-10">
+                    <td colSpan={19} className="text-center text-muted-foreground py-10">
                       No routes match these filters.
                     </td>
                   </tr>
@@ -396,10 +398,41 @@ export default function Routes() {
                         <td className="num-cell text-xs text-muted-foreground">${Number(r.estPlatformFee).toFixed(0)}</td>
                         <td className="num-cell text-xs">
                           <Input
-                            className="h-7 w-16 ml-auto text-right font-mono border-transparent hover:border-border focus:border-ring"
-                            defaultValue={String(r.driverBonus)}
-                            onBlur={(e) => update.mutate({ id: r.id, driverBonus: e.target.value })}
+                            className="h-7 w-14 ml-auto text-right font-mono border-transparent hover:border-border focus:border-ring"
+                            placeholder="0"
+                            defaultValue={Number(r.holidayPerStopSurcharge) > 0 ? String(r.holidayPerStopSurcharge) : ""}
+                            onBlur={(e) =>
+                              update.mutate({ id: r.id, holidayPerStopSurcharge: e.target.value || "0" })
+                            }
+                            title="Per-stop holiday surcharge added to fee for THIS route only"
                           />
+                        </td>
+                        <td className="num-cell text-xs">
+                          <Input
+                            className="h-7 w-16 ml-auto text-right font-mono border-transparent hover:border-border focus:border-ring"
+                            placeholder="0"
+                            defaultValue={Number(r.driverBonus) > 0 ? String(r.driverBonus) : ""}
+                            onBlur={(e) => update.mutate({ id: r.id, driverBonus: e.target.value || "0" })}
+                            title="Flat bonus added to this driver's pay"
+                          />
+                        </td>
+                        <td className="num-cell text-xs">
+                          {(() => {
+                            // estRouteFee already includes per-route holiday differential after recalc;
+                            // estDriverPay already includes per-route driver bonus.
+                            const fee = Number(r.estRouteFee);
+                            const driverPay = Number(r.estDriverPay);
+                            const mileagePay = Number(r.estMileagePay);
+                            const platform = Number(r.estPlatformFee);
+                            const margin = fee - driverPay - mileagePay - platform;
+                            const tone =
+                              margin >= 0 ? "text-emerald-700" : "text-red-700";
+                            return (
+                              <span className={`font-medium ${tone}`} title="Net = Fee (incl. Holiday) − Driver Pay (incl. Bonus) − Mileage Pay − Platform Fee">
+                                ${margin.toFixed(0)}
+                              </span>
+                            );
+                          })()}
                         </td>
                         <td>
                           <Select
@@ -421,7 +454,7 @@ export default function Routes() {
                       </tr>
                       {isExpanded && (
                         <tr>
-                          <td colSpan={17} className="!p-0 bg-muted/20">
+                          <td colSpan={19} className="!p-0 bg-muted/20">
                             <div className="px-12 py-4">
                               <div className="flex items-center justify-between mb-3">
                                 <div className="text-xs uppercase tracking-wider text-muted-foreground">

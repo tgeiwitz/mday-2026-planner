@@ -355,6 +355,7 @@ export const appRouter = router({
 
   wodely: router({
     testAuth: publicProcedure.query(() => testAuth()),
+    lastSync: publicProcedure.query(() => db.getWodelyLastSync()),
     syncConfirmed: publicProcedure.mutation(async () => {
       const startIso = "2026-04-28T00:00:00.000Z";
       const endIso = "2026-05-19T23:59:59.999Z";
@@ -380,8 +381,16 @@ export const appRouter = router({
       await db.cacheWodelyTasks(tasks);
       // Recalculate all routes so blended fees reflect latest sync
       await db.recalculateAllRoutes();
-      return { success: true, syncedDates: updated, totalTasks: tasks.length, lastSyncedAt: new Date().toISOString() };
+      const lastSyncedAt = await db.setWodelyLastSync({
+        syncedDates: updated,
+        totalTasks: tasks.length,
+      });
+      return { success: true, syncedDates: updated, totalTasks: tasks.length, lastSyncedAt };
     }),
+  }),
+
+  profitability: router({
+    rollup: publicProcedure.query(() => db.getProfitabilityRollup()),
   }),
 
   snapshots: router({

@@ -126,32 +126,102 @@ function CopyBlurbButton({ r }: { r: PlanningRow }) {
   );
 }
 
+function relativeTime(iso: string): { label: string; minutesAgo: number } {
+  const then = new Date(iso).getTime();
+  const now = Date.now();
+  const diffMs = Math.max(0, now - then);
+  const minutes = Math.floor(diffMs / 60000);
+  if (minutes < 1) return { label: "just now", minutesAgo: 0 };
+  if (minutes < 60) return { label: `${minutes}m ago`, minutesAgo: minutes };
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return { label: `${hours}h ${minutes % 60}m ago`, minutesAgo: minutes };
+  const days = Math.floor(hours / 24);
+  return { label: `${days}d ago`, minutesAgo: minutes };
+}
+
+function LastSyncBadge() {
+  const { data, isLoading } = trpc.wodely.lastSync.useQuery(undefined, {
+    refetchInterval: 60_000, // re-tick the relative time every minute
+  });
+  // Force a re-render every 30s so the relative label stays fresh between fetches.
+  const [, force] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => force((n) => n + 1), 30_000);
+    return () => clearInterval(t);
+  }, []);
+
+  if (isLoading) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+        <span className="h-2 w-2 rounded-full bg-muted-foreground/40 animate-pulse" />
+        Checking last sync…
+      </span>
+    );
+  }
+  if (!data?.lastSyncedAt) {
+    return (
+      <span
+        className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 text-amber-900 px-2 py-0.5 text-[11px] font-medium"
+        title="No successful Wodely sync recorded yet. Click Sync from Wodely."
+      >
+        <span className="h-2 w-2 rounded-full bg-amber-500" />
+        Never synced
+      </span>
+    );
+  }
+  const { label, minutesAgo } = relativeTime(data.lastSyncedAt);
+  let tone = "emerald"; // <= 15 min
+  if (minutesAgo > 60) tone = "red";
+  else if (minutesAgo > 15) tone = "amber";
+  const toneClasses: Record<string, string> = {
+    emerald: "border-emerald-300 bg-emerald-50 text-emerald-900",
+    amber: "border-amber-300 bg-amber-50 text-amber-900",
+    red: "border-red-300 bg-red-50 text-red-900",
+  };
+  const dotClasses: Record<string, string> = {
+    emerald: "bg-emerald-500",
+    amber: "bg-amber-500",
+    red: "bg-red-500",
+  };
+  const absolute = new Date(data.lastSyncedAt).toLocaleString();
+  const detail =
+    typeof data.totalTasks === "number" && data.totalTasks >= 0
+      ? ` · ${data.totalTasks} task${data.totalTasks === 1 ? "" : "s"} / ${data.syncedDates} day${data.syncedDates === 1 ? "" : "s"}`
+      : "";
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium ${toneClasses[tone]}`}
+      title={`Last successful Wodely sync: ${absolute}${detail}`}
+    >
+      <span className={`h-2 w-2 rounded-full ${dotClasses[tone]}`} />
+      Last synced {label}
+    </span>
+  );
+}
+
 function SyncFromWodelyButton() {
-  const [lastSync, setLastSync] = useState<string | null>(null);
   const utils = trpc.useUtils();
   const sync = trpc.wodely.syncConfirmed.useMutation({
     onSuccess: (res: any) => {
-      setLastSync(new Date().toLocaleString());
       toast.success(`Synced ${res?.totalTasks ?? 0} tasks across ${res?.syncedDates ?? 0} day(s)`);
       utils.planning.list.invalidate();
       utils.forecast.list.invalidate();
       utils.routes.list.invalidate();
+      utils.wodely.lastSync.invalidate();
     },
     onError: (err: any) => toast.error(`Sync failed: ${err.message}`),
   });
   return (
-    <div className="flex flex-col items-end gap-1">
+    <div className="flex flex-col items-end gap-1.5">
       <Button
         onClick={() => sync.mutate()}
         disabled={sync.isPending}
         size="sm"
         className="bg-primary text-primary-foreground"
       >
-        {sync.isPending ? "Syncing\u2026" : "Sync from Wodely"}
+        {sync.isPending ? "Syncing…" : "Sync from Wodely"}
       </Button>
-      {lastSync && (
-        <span className="text-[11px] text-muted-foreground">Last sync: {lastSync}</span>
-      )}
+      <LastSyncBadge />
     </div>
   );
 }
