@@ -69,7 +69,7 @@ export default function Drivers() {
             </span>
             <h1 className="page-title mt-1">Drivers</h1>
             <p className="page-subtitle">
-              Confirmed, pending, and placeholder drivers with per-driver time differentials.
+              Confirmed, pending, and placeholder drivers with per-driver time differentials and per-driver pay overrides. Two drivers on the same timeblock can earn different rates.
             </p>
           </div>
           <Dialog open={open} onOpenChange={setOpen}>
@@ -140,6 +140,9 @@ export default function Drivers() {
                 <th>Status</th>
                 <th>Type</th>
                 <th className="text-right">Time/Stop Diff</th>
+                <th className="text-right" title="Per-driver share of route fee. Blank = use global driverPayPct (75%).">Pay %</th>
+                <th className="text-right" title="Per-driver pay floor. Blank = inherit timeblock minPayFloor.">Pay Floor</th>
+                <th className="text-right" title="Per-driver pay max. Blank = inherit timeblock maxPayFloor.">Pay Max</th>
                 <th></th>
               </tr>
             </thead>
@@ -183,6 +186,49 @@ export default function Drivers() {
                       step="0.5"
                       defaultValue={String(d.timePerStopDiff)}
                       onBlur={(e) => update.mutate({ id: d.id, timePerStopDiff: e.target.value })}
+                    />
+                  </td>
+                  <td className="text-right">
+                    <Input
+                      className="h-8 w-20 ml-auto text-right font-mono border-transparent bg-transparent hover:border-border focus:border-ring"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="1"
+                      placeholder=".75"
+                      defaultValue={d.payPctOverride ?? ""}
+                      onBlur={(e) => {
+                        const raw = e.target.value.trim();
+                        update.mutate({ id: d.id, payPctOverride: raw === "" ? null : raw });
+                      }}
+                    />
+                  </td>
+                  <td className="text-right">
+                    <Input
+                      className="h-8 w-24 ml-auto text-right font-mono border-transparent bg-transparent hover:border-border focus:border-ring"
+                      type="number"
+                      step="1"
+                      min="0"
+                      placeholder="—"
+                      defaultValue={d.payFloorOverride ?? ""}
+                      onBlur={(e) => {
+                        const raw = e.target.value.trim();
+                        update.mutate({ id: d.id, payFloorOverride: raw === "" ? null : raw });
+                      }}
+                    />
+                  </td>
+                  <td className="text-right">
+                    <Input
+                      className="h-8 w-24 ml-auto text-right font-mono border-transparent bg-transparent hover:border-border focus:border-ring"
+                      type="number"
+                      step="1"
+                      min="0"
+                      placeholder="—"
+                      defaultValue={d.payMaxOverride ?? ""}
+                      onBlur={(e) => {
+                        const raw = e.target.value.trim();
+                        update.mutate({ id: d.id, payMaxOverride: raw === "" ? null : raw });
+                      }}
                     />
                   </td>
                   <td className="text-right">

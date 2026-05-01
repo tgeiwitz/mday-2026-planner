@@ -103,13 +103,36 @@ export const appRouter = router({
           status: z.enum(["Confirmed", "Pending", "Placeholder"]).optional(),
           driverType: z.enum(["Lead", "New"]).optional(),
           timePerStopDiff: z.union([z.string(), z.number()]).optional(),
+          payPctOverride: z.union([z.string(), z.number()]).nullable().optional(),
+          payFloorOverride: z.union([z.string(), z.number()]).nullable().optional(),
+          payMaxOverride: z.union([z.string(), z.number()]).nullable().optional(),
         })
       )
       .mutation(async ({ input }) => {
         const { id, ...rest } = input;
-        const data: Record<string, unknown> = { ...rest };
-        if (data.timePerStopDiff !== undefined) data.timePerStopDiff = String(data.timePerStopDiff);
+        const data: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(rest)) {
+          if (v === undefined) continue;
+          if (v === null) {
+            data[k] = null;
+          } else if (["timePerStopDiff", "payPctOverride", "payFloorOverride", "payMaxOverride"].includes(k)) {
+            data[k] = String(v);
+          } else {
+            data[k] = v;
+          }
+        }
         await db.updateDriver(id, data);
+        // If a pay override (or time differential) changed, route estimates that depend
+        // on this driver are stale — fire a global recalc so Routes / Profitability stay correct.
+        const recalcKeys = ["payPctOverride", "payFloorOverride", "payMaxOverride", "timePerStopDiff"];
+        if (recalcKeys.some((k) => k in data)) {
+          try {
+            await db.recalculateAllRoutes({ triggeredBy: "driver-pay-override" });
+          } catch (e) {
+            // best-effort; do not fail the driver update on a recalc hiccup
+            console.error("recalc after driver pay override failed", e);
+          }
+        }
         return { success: true };
       }),
     delete: publicProcedure
@@ -391,6 +414,10 @@ export const appRouter = router({
 
   profitability: router({
     rollup: publicProcedure.query(() => db.getProfitabilityRollup()),
+  }),
+
+  wodelyAdjustments: router({
+    list: publicProcedure.query(() => db.listWodelyAdjustments()),
   }),
 
   snapshots: router({

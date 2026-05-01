@@ -77,6 +77,16 @@ export const drivers = mysqlTable("drivers", {
   status: mysqlEnum("status", ["Confirmed", "Pending", "Placeholder"]).notNull().default("Pending"),
   driverType: mysqlEnum("driverType", ["Lead", "New"]).notNull().default("Lead"),
   timePerStopDiff: decimal("timePerStopDiff", { precision: 5, scale: 2 }).notNull().default("0"),
+  // Per-driver pay overrides. Null = inherit (global driverPayPct, timeblock floor/max).
+  // payPctOverride is the percent of route fee paid to this driver, e.g. "0.78" for 78%.
+  payPctOverride: decimal("payPctOverride", { precision: 5, scale: 4 }),
+  payFloorOverride: decimal("payFloorOverride", { precision: 10, scale: 2 }),
+  payMaxOverride: decimal("payMaxOverride", { precision: 10, scale: 2 }),
+  // Hourly target band used by the recalc engine to clamp Route Base Pay.
+  // Floor = hourlyTargetMin × estDuration (hours); Max = hourlyTargetMax × estDuration.
+  // If unset, falls back to the dollar overrides above, then to the timeblock defaults.
+  hourlyTargetMin: decimal("hourlyTargetMin", { precision: 6, scale: 2 }),
+  hourlyTargetMax: decimal("hourlyTargetMax", { precision: 6, scale: 2 }),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
@@ -148,6 +158,12 @@ export const routes = mysqlTable("routes", {
   estMileage: decimal("estMileage", { precision: 8, scale: 2 }).notNull().default("0"),
   estRouteFee: decimal("estRouteFee", { precision: 10, scale: 2 }).notNull().default("0"),
   estDriverPay: decimal("estDriverPay", { precision: 10, scale: 2 }).notNull().default("0"),
+  // Route Base Pay = (fee × pct) − mileagePay, clamped to driver's hourly band × hours, plus bonus.
+  // Total Driver Pay = estRouteBasePay + estMileagePay (what the driver sees on their route sheet).
+  estRouteBasePay: decimal("estRouteBasePay", { precision: 10, scale: 2 }).notNull().default("0"),
+  estTotalDriverPay: decimal("estTotalDriverPay", { precision: 10, scale: 2 }).notNull().default("0"),
+  // When the hourly floor binds, this is the workforce-task gross-up to upload to Wodely.
+  wodelyAdjustment: decimal("wodelyAdjustment", { precision: 10, scale: 2 }).notNull().default("0"),
   estMileagePay: decimal("estMileagePay", { precision: 10, scale: 2 }).notNull().default("0"),
   estPlatformFee: decimal("estPlatformFee", { precision: 10, scale: 2 }).notNull().default("0"),
   payFloorOverride: decimal("payFloorOverride", { precision: 8, scale: 2 }),

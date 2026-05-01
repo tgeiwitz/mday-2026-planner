@@ -258,3 +258,36 @@
 - [x] Author DATA_LINEAGE.md (sources + formulas + route creation flow + per-route math + profitability rollup + test invariants + worked example)
 - [x] Profitability page: collapsible "How is this calculated? Where does the data come from?" panel mirrors the doc
 - [x] Tests: 24 passing / 2 legacy skipped
+
+
+## v30 Per-driver pay rate (Driver A vs Driver B can earn different on the same block)
+- [ ] drivers table: add `payPctOverride` (nullable), `payFloorOverride` (nullable), `payMaxOverride` (nullable). Null = inherit (global pct, timeblock floor/max).
+- [ ] Migration applied
+- [ ] Recalc engine: when a driver is assigned to a route, use that driver's overrides for pct + floor + max instead of the global/timeblock defaults. Per-route overrides still beat per-driver.
+- [ ] Drivers page: inline-editable columns for Pay %, Pay Floor, Pay Max
+- [ ] Routes page: tooltip on Driver Pay shows the resolved rate (e.g. "78% × fee, floor $160")
+- [ ] DATA_LINEAGE.md + in-app explainer updated
+- [ ] vitest: two drivers, same timeblock, different rates → recalc produces different estDriverPay
+
+
+## v31 Hourly-band pay model + Wodely workforce-task adjustments
+- [ ] drivers schema: hourlyTargetMin (decimal), hourlyTargetMax (decimal), nullable. Defaults 28 / 35.
+- [ ] routes schema: store estRouteBasePay, estTotalDriverPay, wodelyAdjustment (all derived).
+- [ ] Recalc engine: gross = fee * pct; netPay = gross - mileagePay; floor = hourlyTargetMin * hours; max = hourlyTargetMax * hours; if netPay < floor -> wodelyAdjustment = floor - netPay, routeBasePay = floor, else if netPay > max -> routeBasePay = max (surplus stays in 25%), else routeBasePay = netPay; routeBasePay += bonus; total = routeBasePay + mileagePay.
+- [ ] Routes page: columns for Miles, Hours, Route Base, Mileage, Total Pay, Wodely Adj
+- [ ] Driver-facing Route Sheet (modal/print) per route: Duration, Miles, Stops, Route Base + Mileage = Total
+- [ ] New Wodely Adjustments page: per-route delta, total to upload as workforce tasks; copy/CSV export
+- [ ] Drivers page: hourly band columns
+- [ ] DATA_LINEAGE.md + Profitability explainer updated
+- [ ] vitests: floor binds / no bind / max binds / mileage included
+
+
+## v32 Forecasting precedence chain (global → driver → route)
+- [ ] global_settings: targetMaxCapacity, targetDuration (min), targetStops, targetHourlyMin, targetHourlyMax
+- [ ] drivers: maxCapacity, targetDuration, targetStops (already have hourlyTargetMin/Max + payPctOverride)
+- [ ] routes: maxCapacity, targetDuration, targetStops, hourlyTargetMin, hourlyTargetMax (nullable = inherit)
+- [ ] Precedence resolver: route override > driver override > global default; used by recalc + UI
+- [ ] Settings → Forecasting Defaults section
+- [ ] Drivers + Routes pages: inline override columns showing effective value + source badge
+- [ ] DATA_LINEAGE.md updated to describe the chain
+- [ ] vitest: precedence resolution for each field; unit test for recalc using a route override

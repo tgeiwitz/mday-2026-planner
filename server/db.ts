@@ -546,23 +546,77 @@ export async function recalculateAllRoutes(opts: { triggeredBy?: string } = {}) 
     } else if (holidayEnabled) {
       fee += holidayPerStop * r.stops;
     }
-    let driverPay = fee * driverPayPct;
-    // Per-route driver bonus is additive to driver pay (after pct, before floor/max).
-    const routeBonus = r.driverBonus ? parseFloat(String(r.driverBonus)) : 0;
-    if (routeBonus > 0) driverPay += routeBonus;
-    // Apply floor/max: route-level override wins over timeblock default
+    // ---- v31 PAY MODEL ----
+    // 75% of fee is the driver's all-in cut. Split it into Mileage Reimbursement
+    // (miles × IRS-style rate) and Route Base Pay (the time portion).
+    // Then clamp Route Base Pay to the per-driver hourly target band × estDuration
+    // (in hours). When the floor binds, the gross-up is logged as `wodelyAdjustment`
+    // — the platform uploads it as a workforce task in Wodely so the driver's
+    // payroll matches our intent without changing the merchant's invoice.
     const tb = tbMap.get(r.timeblockId);
-    const floor = r.payFloorOverride ? parseFloat(String(r.payFloorOverride)) : tb ? parseFloat(String(tb.minPayFloor)) : 0;
-    const max = r.payMaxOverride ? parseFloat(String(r.payMaxOverride)) : tb ? parseFloat(String(tb.maxPayFloor)) : Infinity;
-    if (floor > 0 && driverPay < floor) driverPay = floor;
-    if (max > 0 && driverPay > max) driverPay = max;
-    const mileagePay = miles > mileageThreshold ? (miles - mileageThreshold) * mileagePayPerMile : 0;
+    const effectivePct = driver && driver.payPctOverride
+      ? parseFloat(String(driver.payPctOverride))
+      : driverPayPct;
+    const grossDriverShare = fee * effectivePct;
+    // Mileage rate: prefer the timeblock's mileageRate (per-mile), fall back to
+    // global mileagePayPerMile. The global threshold is honored: only miles above
+    // the threshold are reimbursed, matching prior behavior.
+    const tbMileageRate = tb && tb.mileageRate ? parseFloat(String(tb.mileageRate)) : mileagePayPerMile;
+    const mileagePay = miles > mileageThreshold ? (miles - mileageThreshold) * tbMileageRate : 0;
+    const netPay = grossDriverShare - mileagePay; // time-portion of the 75%
+
+    // Hourly band: per-driver hourlyTargetMin/Max × estDuration (in hours).
+    // If hourly is unset, fall back to dollar overrides, then timeblock floor/max.
+    const hours = estDurationMin / 60;
+    const driverHourlyMin = driver && driver.hourlyTargetMin
+      ? parseFloat(String(driver.hourlyTargetMin)) : null;
+    const driverHourlyMax = driver && driver.hourlyTargetMax
+      ? parseFloat(String(driver.hourlyTargetMax)) : null;
+    const hourlyFloor = driverHourlyMin !== null ? driverHourlyMin * hours : null;
+    const hourlyCeil = driverHourlyMax !== null ? driverHourlyMax * hours : null;
+    const dollarFloor = r.payFloorOverride
+      ? parseFloat(String(r.payFloorOverride))
+      : driver && driver.payFloorOverride
+        ? parseFloat(String(driver.payFloorOverride))
+        : tb ? parseFloat(String(tb.minPayFloor)) : 0;
+    const dollarCeil = r.payMaxOverride
+      ? parseFloat(String(r.payMaxOverride))
+      : driver && driver.payMaxOverride
+        ? parseFloat(String(driver.payMaxOverride))
+        : tb ? parseFloat(String(tb.maxPayFloor)) : Infinity;
+    const effectiveFloor = hourlyFloor !== null ? hourlyFloor : dollarFloor;
+    const effectiveCeil = hourlyCeil !== null ? hourlyCeil : dollarCeil;
+
+    // Apply floor / ceil to netPay.
+    let routeBasePay = netPay;
+    let wodelyAdjustment = 0;
+    if (effectiveFloor > 0 && routeBasePay < effectiveFloor) {
+      wodelyAdjustment = effectiveFloor - routeBasePay; // grossUp uploaded as workforce task
+      routeBasePay = effectiveFloor;
+    }
+    if (effectiveCeil > 0 && routeBasePay > effectiveCeil) {
+      // Surplus stays in the platform 25%; cap routeBasePay.
+      routeBasePay = effectiveCeil;
+    }
+    // Bonus is additive on top of Route Base Pay (already past floor/ceil).
+    const routeBonus = r.driverBonus ? parseFloat(String(r.driverBonus)) : 0;
+    if (routeBonus > 0) routeBasePay += routeBonus;
+
+    // Total comp the driver actually receives across Route Base + Mileage line items.
+    const totalDriverPay = routeBasePay + mileagePay;
+    // Back-compat field kept in lock-step with the new total so existing reports
+    // keep working until they're migrated to estTotalDriverPay / estRouteBasePay.
+    const driverPay = totalDriverPay;
+
     const platformFee = fee * platformFeePct;
 
     // Estimate values always update (pre-Routed source of truth).
     const estUpdate: Record<string, unknown> = {
       estRouteFee: fee.toFixed(2),
       estDriverPay: driverPay.toFixed(2),
+      estRouteBasePay: routeBasePay.toFixed(2),
+      estTotalDriverPay: totalDriverPay.toFixed(2),
+      wodelyAdjustment: wodelyAdjustment.toFixed(2),
       estMileagePay: mileagePay.toFixed(2),
       estPlatformFee: platformFee.toFixed(2),
       estMileage: miles.toFixed(2),
@@ -1620,4 +1674,51 @@ export async function getProfitabilityRollup(): Promise<{
   );
 
   return { days, weeks, totals };
+}
+
+
+// ======================
+// Wodely Adjustments (gross-ups uploaded as workforce tasks)
+// ======================
+// Returns every route with a positive `wodelyAdjustment`, with enough context
+// (date / route code / merchant / driver name) to upload as a workforce task.
+// Includes the `total` (sum) so the UI can render a one-shot rollup.
+export async function listWodelyAdjustments() {
+  const db = await getDb();
+  if (!db) return { rows: [], total: 0 };
+  const allRoutes = await db.select().from(routes);
+  const allTimeblocks = await db.select().from(timeblocks);
+  const allDrivers = await db.select().from(drivers);
+  const tbMap = new Map(allTimeblocks.map((t) => [t.id, t]));
+  const drvMap = new Map(allDrivers.map((d) => [d.id, d]));
+  const rows = allRoutes
+    .filter((r) => Number(r.wodelyAdjustment ?? 0) > 0)
+    .map((r) => {
+      const tb = tbMap.get(r.timeblockId);
+      const drv = r.driverId ? drvMap.get(r.driverId) : null;
+      const dateIso = tb && tb.blockDate
+        ? (tb.blockDate instanceof Date
+            ? `${tb.blockDate.getUTCFullYear()}-${String(tb.blockDate.getUTCMonth() + 1).padStart(2, "0")}-${String(tb.blockDate.getUTCDate()).padStart(2, "0")}`
+            : String(tb.blockDate).slice(0, 10))
+        : "";
+      return {
+        routeId: r.id,
+        routeCode: r.routeCode,
+        date: dateIso,
+        merchant: r.merchant,
+        driverId: r.driverId ?? null,
+        driverName: drv ? drv.name : null,
+        stops: Number(r.stops),
+        estDuration: Number(r.estDuration), // minutes
+        estMileage: Number(r.estMileage),
+        estRouteFee: Number(r.estRouteFee),
+        estRouteBasePay: Number(r.estRouteBasePay ?? 0),
+        estMileagePay: Number(r.estMileagePay),
+        estTotalDriverPay: Number(r.estTotalDriverPay ?? r.estDriverPay),
+        wodelyAdjustment: Number(r.wodelyAdjustment ?? 0),
+      };
+    })
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.routeCode.localeCompare(b.routeCode)));
+  const total = rows.reduce((s, r) => s + r.wodelyAdjustment, 0);
+  return { rows, total };
 }

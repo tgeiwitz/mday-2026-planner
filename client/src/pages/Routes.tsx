@@ -152,8 +152,9 @@ export default function Routes() {
   }, [filtered]);
 
   const totalFee = sorted.reduce((s, { r }) => s + Number(r.estRouteFee), 0);
-  const totalPay = sorted.reduce((s, { r }) => s + Number(r.estDriverPay), 0);
+  const totalPay = sorted.reduce((s, { r }) => s + Number((r as any).estTotalDriverPay ?? r.estDriverPay), 0);
   const totalStops = sorted.reduce((s, { r }) => s + Number(r.stops), 0);
+  const totalAdjustment = sorted.reduce((s, { r }) => s + Number((r as any).wodelyAdjustment ?? 0), 0);
 
   return (
     <div className="min-h-screen bg-background">
@@ -252,6 +253,9 @@ export default function Routes() {
             <span><span className="font-semibold text-foreground">{totalStops}</span> stops</span>
             <span>Revenue <span className="font-semibold text-foreground">${totalFee.toFixed(0)}</span></span>
             <span>Driver pay <span className="font-semibold text-foreground">${totalPay.toFixed(0)}</span></span>
+            {totalAdjustment > 0 && (
+              <span className="text-amber-700">Wodely workforce-task adjustments to upload <span className="font-semibold">${totalAdjustment.toFixed(0)}</span></span>
+            )}
           </div>
         </div>
       </div>
@@ -272,9 +276,11 @@ export default function Routes() {
                   <th className="text-right">Dur</th>
                   <th className="text-right">Miles</th>
                   <th className="text-right">Fee</th>
-                  <th className="text-right">Driver Pay</th>
-                  <th className="text-right">Floor</th>
-                  <th className="text-right">Max</th>
+                  <th className="text-right" title="Route Base Pay = (Fee × 75%) − Mileage; clamped to driver's hourly band × hours; bonus added on top.">Route Base</th>
+                  <th className="text-right" title="What the driver actually receives = Route Base + Mileage.">Total Pay</th>
+                  <th className="text-right" title="Workforce task to upload to Wodely when the hourly floor binds.">Wodely Adj</th>
+                  <th className="text-right">Floor $</th>
+                  <th className="text-right">Max $</th>
                   <th className="text-right">Mileage</th>
                   <th className="text-right">Platform</th>
                   <th className="text-right" title="Per-stop holiday surcharge added to route fee">Holiday $/stop</th>
@@ -286,7 +292,7 @@ export default function Routes() {
               <tbody>
                 {sorted.length === 0 && (
                   <tr>
-                    <td colSpan={19} className="text-center text-muted-foreground py-10">
+                    <td colSpan={21} className="text-center text-muted-foreground py-10">
                       No routes match these filters.
                     </td>
                   </tr>
@@ -377,7 +383,15 @@ export default function Routes() {
                         <td className="num-cell text-xs">{r.estDuration}m</td>
                         <td className="num-cell text-xs">{Number(r.estMileage).toFixed(1)}</td>
                         <td className="num-cell font-medium">${Number(r.estRouteFee).toFixed(0)}</td>
-                        <td className="num-cell text-primary font-medium">${Number(r.estDriverPay).toFixed(0)}</td>
+                        <td className="num-cell" title="Route Base Pay (time portion of the 75%, post-floor/ceil + bonus)">${Number((r as any).estRouteBasePay ?? 0).toFixed(0)}</td>
+                        <td className="num-cell text-primary font-medium" title="Total Driver Pay = Route Base + Mileage">${Number((r as any).estTotalDriverPay ?? r.estDriverPay).toFixed(0)}</td>
+                        <td className="num-cell text-xs">
+                          {Number((r as any).wodelyAdjustment ?? 0) > 0 ? (
+                            <span className="text-amber-700 font-medium" title="Upload as a workforce task on this route in Wodely so the driver's payroll matches plan.">${Number((r as any).wodelyAdjustment).toFixed(0)}</span>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </td>
                         <td className="num-cell text-xs">
                           <Input
                             className="h-7 w-16 ml-auto text-right font-mono border-transparent hover:border-border focus:border-ring"
@@ -418,17 +432,16 @@ export default function Routes() {
                         </td>
                         <td className="num-cell text-xs">
                           {(() => {
-                            // estRouteFee already includes per-route holiday differential after recalc;
-                            // estDriverPay already includes per-route driver bonus.
+                            // Total Driver Pay already includes Mileage and Bonus (post-floor/ceil).
+                            // Wodely Adjustment is paid out of the platform's 25%, so it reduces margin.
                             const fee = Number(r.estRouteFee);
-                            const driverPay = Number(r.estDriverPay);
-                            const mileagePay = Number(r.estMileagePay);
+                            const total = Number((r as any).estTotalDriverPay ?? r.estDriverPay);
                             const platform = Number(r.estPlatformFee);
-                            const margin = fee - driverPay - mileagePay - platform;
-                            const tone =
-                              margin >= 0 ? "text-emerald-700" : "text-red-700";
+                            const adj = Number((r as any).wodelyAdjustment ?? 0);
+                            const margin = fee - total - platform - adj;
+                            const tone = margin >= 0 ? "text-emerald-700" : "text-red-700";
                             return (
-                              <span className={`font-medium ${tone}`} title="Net = Fee (incl. Holiday) − Driver Pay (incl. Bonus) − Mileage Pay − Platform Fee">
+                              <span className={`font-medium ${tone}`} title="Net = Fee − Total Driver Pay − Platform Fee − Wodely Adj">
                                 ${margin.toFixed(0)}
                               </span>
                             );
