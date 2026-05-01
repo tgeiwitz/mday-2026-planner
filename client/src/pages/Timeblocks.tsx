@@ -17,6 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { InlineEnumInput } from "@/components/InlineEnumInput";
 import { trpc } from "@/lib/trpc";
 import { Plus, X, Pencil, Copy, Trash2 } from "lucide-react";
 import { useState } from "react";
@@ -335,23 +336,28 @@ export default function Timeblocks() {
                               );
                             })}
                             <div className="flex gap-1">
-                              <Select
+                              <InlineEnumInput
                                 value={selectedDriver[b.id] ?? ""}
-                                onValueChange={(v) => setSelectedDriver((p) => ({ ...p, [b.id]: v }))}
-                              >
-                                <SelectTrigger className="h-6 text-xs w-[140px]">
-                                  <SelectValue placeholder="Assign..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {drivers
-                                    .filter((d) => !blockAssignments.some((a) => a.driverId === d.id))
-                                    .map((d) => (
-                                      <SelectItem key={d.id} value={String(d.id)}>
-                                        {d.name}
-                                      </SelectItem>
-                                    ))}
-                                </SelectContent>
-                              </Select>
+                                options={drivers
+                                  .filter((d) => !blockAssignments.some((a) => a.driverId === d.id))
+                                  .map((d) => d.name)}
+                                labelMap={Object.fromEntries(
+                                  drivers.map((d) => [String(d.id), d.name]),
+                                )}
+                                placeholder="Type a driver name…"
+                                onCommit={(v) => {
+                                  if (!v.trim()) {
+                                    setSelectedDriver((p) => ({ ...p, [b.id]: "" }));
+                                    return;
+                                  }
+                                  const match = drivers.find(
+                                    (d) => d.name.toLowerCase() === v.trim().toLowerCase(),
+                                  );
+                                  if (match) setSelectedDriver((p) => ({ ...p, [b.id]: String(match.id) }));
+                                }}
+                                className="h-6 w-[140px]"
+                                ariaLabel="Driver to assign"
+                              />
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -426,27 +432,28 @@ export default function Timeblocks() {
                   placeholder="Auto-generated if blank" />
               </Field>
               <Field label="Merchant">
-                <Select value={editor.form.merchant}
-                  onValueChange={(v) => setEditor({ ...editor, form: { ...editor.form, merchant: v as any } })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Flex">Flex (mixed)</SelectItem>
-                    <SelectItem value="LAF">LAF</SelectItem>
-                    <SelectItem value="BC">BC</SelectItem>
-                    <SelectItem value="SMC">SMC</SelectItem>
-                    <SelectItem value="SMR">SMR</SelectItem>
-                  </SelectContent>
-                </Select>
+                <InlineEnumInput
+                  value={editor.form.merchant}
+                  options={["Flex", "LAF", "BC", "SMC", "SMR"]}
+                  onCommit={(v) => {
+                    if (["Flex", "LAF", "BC", "SMC", "SMR"].includes(v))
+                      setEditor({ ...editor, form: { ...editor.form, merchant: v as any } });
+                  }}
+                  className="h-9 w-full"
+                  ariaLabel="Merchant"
+                />
               </Field>
               <Field label="Booking type">
-                <Select value={editor.form.bookingType}
-                  onValueChange={(v) => setEditor({ ...editor, form: { ...editor.form, bookingType: v as any } })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Flex">Flex — routes can mix merchants</SelectItem>
-                    <SelectItem value="Direct">Direct — single merchant</SelectItem>
-                  </SelectContent>
-                </Select>
+                <InlineEnumInput
+                  value={editor.form.bookingType}
+                  options={["Flex", "Direct"]}
+                  onCommit={(v) => {
+                    if (v === "Flex" || v === "Direct")
+                      setEditor({ ...editor, form: { ...editor.form, bookingType: v as any } });
+                  }}
+                  className="h-9 w-full"
+                  ariaLabel="Booking type"
+                />
               </Field>
               <Field label="Route start">
                 <Input type="time" value={editor.form.routeStart}

@@ -8,6 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { InlineEnumInput } from "@/components/InlineEnumInput";
 import { trpc } from "@/lib/trpc";
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, Plus } from "lucide-react";
@@ -209,39 +210,43 @@ export default function Routes() {
                 <div className="space-y-3">
                   <div>
                     <label className="text-xs uppercase tracking-wider text-muted-foreground">Timeblock</label>
-                    <Select value={newRoute.timeblockId} onValueChange={(v) => setNewRoute({ ...newRoute, timeblockId: v })}>
-                      <SelectTrigger className="h-9"><SelectValue placeholder="Pick a timeblock" /></SelectTrigger>
-                      <SelectContent>
-                        {timeblocks.map((t) => (
-                          <SelectItem key={t.id} value={String(t.id)}>
-                            {fmtDate(toISODate(t.blockDate))} · {t.label} · {t.merchant}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <InlineEnumInput
+                      value={newRoute.timeblockId}
+                      options={timeblocks.map((t) => `${fmtDate(toISODate(t.blockDate))} · ${t.label} · ${t.merchant}`)}
+                      labelMap={Object.fromEntries(timeblocks.map((t) => [String(t.id), `${fmtDate(toISODate(t.blockDate))} · ${t.label} · ${t.merchant}`]))}
+                      placeholder="Type to find a timeblock…"
+                      onCommit={(v) => {
+                        const match = timeblocks.find((t) => `${fmtDate(toISODate(t.blockDate))} · ${t.label} · ${t.merchant}` === v);
+                        if (match) setNewRoute({ ...newRoute, timeblockId: String(match.id) });
+                      }}
+                      className="h-9 w-full"
+                      ariaLabel="Timeblock"
+                    />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="text-xs uppercase tracking-wider text-muted-foreground">Merchant</label>
-                      <Select value={newRoute.merchant} onValueChange={(v) => setNewRoute({ ...newRoute, merchant: v as "LAF" | "BC" | "SMC" | "SMR" })}>
-                        <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="LAF">LAF</SelectItem>
-                          <SelectItem value="BC">BC</SelectItem>
-                          <SelectItem value="SMC">SMC</SelectItem>
-                          <SelectItem value="SMR">SMR</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <InlineEnumInput
+                        value={newRoute.merchant}
+                        options={["LAF", "BC", "SMC", "SMR"]}
+                        onCommit={(v) => {
+                          if (["LAF", "BC", "SMC", "SMR"].includes(v)) setNewRoute({ ...newRoute, merchant: v as any });
+                        }}
+                        className="h-9 w-full uppercase"
+                        ariaLabel="Merchant"
+                      />
                     </div>
                     <div>
                       <label className="text-xs uppercase tracking-wider text-muted-foreground">Booking</label>
-                      <Select value={newRoute.bookingType} onValueChange={(v) => setNewRoute({ ...newRoute, bookingType: v as "Direct" | "Flex" })}>
-                        <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Direct">Direct</SelectItem>
-                          <SelectItem value="Flex">Flex</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <InlineEnumInput
+                        value={newRoute.bookingType}
+                        options={["Direct", "Flex"]}
+                        onCommit={(v) => {
+                          if (v === "Direct" || v === "Flex") setNewRoute({ ...newRoute, bookingType: v });
+                        }}
+                        className="h-9 w-full"
+                        ariaLabel="Booking type"
+                      />
                     </div>
                   </div>
                   <div>
@@ -419,16 +424,16 @@ export default function Routes() {
                         <td className="text-xs whitespace-nowrap">{fmtDate(date)}</td>
                         <td className="font-mono font-medium sticky-col">{r.routeCode}</td>
                         <td>
-                          <Select
+                          <InlineEnumInput
                             value={(r as any).bookingType ?? "Direct"}
-                            onValueChange={(v) => update.mutate({ id: r.id, bookingType: v as any })}
-                          >
-                            <SelectTrigger className="h-7 w-[80px] text-xs"><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="Direct">Direct</SelectItem>
-                              <SelectItem value="Flex">Flex</SelectItem>
-                            </SelectContent>
-                          </Select>
+                            options={["Direct", "Flex"]}
+                            onCommit={(v) => {
+                              if (v !== "Direct" && v !== "Flex") return;
+                              update.mutate({ id: r.id, bookingType: v as any });
+                            }}
+                            className="h-7 w-[80px]"
+                            ariaLabel="Booking type"
+                          />
                         </td>
                         <td>
                           {(r as any).bookingType === "Flex" ? (
@@ -436,39 +441,36 @@ export default function Routes() {
                               Flex
                             </Badge>
                           ) : (
-                            <Select
+                            <InlineEnumInput
                               value={r.merchant}
-                              onValueChange={(v) => update.mutate({ id: r.id, merchant: v as any })}
-                            >
-                              <SelectTrigger className="h-7 w-[80px] text-xs border-0 p-0">
-                                <Badge className={merchantBadgeClass(r.merchant)}>{r.merchant}</Badge>
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="LAF">LAF</SelectItem>
-                                <SelectItem value="BC">BC</SelectItem>
-                                <SelectItem value="SMC">SMC</SelectItem>
-                                <SelectItem value="SMR">SMR</SelectItem>
-                              </SelectContent>
-                            </Select>
+                              options={["LAF", "BC", "SMC", "SMR"]}
+                              onCommit={(v) => {
+                                const allowed = ["LAF", "BC", "SMC", "SMR"];
+                                if (!allowed.includes(v)) return;
+                                update.mutate({ id: r.id, merchant: v as any });
+                              }}
+                              className="h-7 w-[80px] uppercase"
+                              ariaLabel="Merchant"
+                            />
                           )}
                         </td>
                         <td>
-                          <Select
-                            value={r.driverId ? String(r.driverId) : "unassigned"}
-                            onValueChange={(v) =>
-                              update.mutate({ id: r.id, driverId: v === "unassigned" ? null : parseInt(v) })
-                            }
-                          >
-                            <SelectTrigger className="h-8 w-[150px] text-xs">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="unassigned">— Unassigned —</SelectItem>
-                              {drivers.map((d) => (
-                                <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          <InlineEnumInput
+                            value={r.driverId ? String(r.driverId) : ""}
+                            options={drivers.map((d) => d.name)}
+                            labelMap={Object.fromEntries(drivers.map((d) => [String(d.id), d.name]))}
+                            placeholder="— Unassigned —"
+                            onCommit={(v) => {
+                              if (!v.trim()) {
+                                update.mutate({ id: r.id, driverId: null });
+                                return;
+                              }
+                              const match = drivers.find((d) => d.name.toLowerCase() === v.trim().toLowerCase());
+                              if (match) update.mutate({ id: r.id, driverId: match.id });
+                            }}
+                            className="h-8 w-[150px]"
+                            ariaLabel="Driver"
+                          />
                         </td>
                         <td className="num-cell">
                           <Input
@@ -549,21 +551,16 @@ export default function Routes() {
                           })()}
                         </td>
                         <td>
-                          <Select
+                          <InlineEnumInput
                             value={r.status}
-                            onValueChange={(v) => update.mutate({ id: r.id, status: v as any })}
-                          >
-                            <SelectTrigger className="h-7 w-[110px] border-0 p-0">
-                              <Badge className={`${STATUS_COLORS[r.status]} border font-normal`}>
-                                {r.status}
-                              </Badge>
-                            </SelectTrigger>
-                            <SelectContent>
-                              {STATUSES.map((s) => (
-                                <SelectItem key={s} value={s}>{s}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                            options={STATUSES}
+                            onCommit={(v) => {
+                              if (!STATUSES.includes(v)) return;
+                              update.mutate({ id: r.id, status: v as any });
+                            }}
+                            className="h-7 w-[110px]"
+                            ariaLabel="Status"
+                          />
                         </td>
                       </tr>
                       {isExpanded && (

@@ -259,6 +259,53 @@ export const appRouter = router({
         await db.deleteTimeblock(input.id);
         return { success: true };
       }),
+    /**
+     * autoCreateWeek: create the standard 7-day pattern (Mon–Sun) starting at `weekOf`.
+     * Skips dates that already have at least one timeblock. Default pattern: one Flex block per day,
+     * targetRoutes=1, defaults inherited from timeblocks.create. Returns counts of created/skipped.
+     */
+    autoCreateWeek: publicProcedure
+      .input(z.object({ weekOf: z.string() /* YYYY-MM-DD, expected to be a Monday */ }))
+      .mutation(async ({ input }) => {
+        const all = await db.listTimeblocks();
+        const existingDates = new Set(
+          all.map((t: any) => {
+            const d = t.blockDate;
+            return d instanceof Date ? d.toISOString().slice(0, 10) : String(d).slice(0, 10);
+          }),
+        );
+        const start = new Date(input.weekOf + "T00:00:00Z");
+        const created: string[] = [];
+        const skipped: string[] = [];
+        for (let i = 0; i < 7; i++) {
+          const d = new Date(start);
+          d.setUTCDate(start.getUTCDate() + i);
+          const iso = d.toISOString().slice(0, 10);
+          if (existingDates.has(iso)) {
+            skipped.push(iso);
+            continue;
+          }
+          const dn = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getUTCDay()];
+          await db.createTimeblock({
+            blockDate: iso,
+            label: `${dn} ${iso.slice(5)} — Flex`,
+            merchant: "Flex" as any,
+            bookingType: "Flex" as any,
+            availabilityStart: "06:00",
+            availabilityEnd: "20:00",
+            pickupDwell: 15,
+            targetRoutes: 1,
+            mileageRate: "0.670",
+            estRoutePay: "0",
+            estDuration: 0,
+            bonus: "0",
+            minPayFloor: "150",
+            maxPayFloor: "250",
+          } as any);
+          created.push(iso);
+        }
+        return { success: true, created, skipped };
+      }),
   }),
 
   driverTimeblocks: router({
@@ -441,6 +488,82 @@ export const appRouter = router({
     referenceForecast: publicProcedure
       .input(z.object({ routeId: z.number() }))
       .query(({ input }) => db.getRouteReferenceForecast(input.routeId)),
+    /**
+     * autoCreateForTimeblock: for a single timeblock, generate `targetRoutes` placeholder rows
+     * (default merchant from the timeblock; LAF if Flex). Existing rows are not touched.
+     */
+    autoCreateForTimeblock: publicProcedure
+      .input(z.object({ timeblockId: z.number() }))
+      .mutation(async ({ input }) => {
+        const tbs = await db.listTimeblocks();
+        const tb = tbs.find((t: any) => t.id === input.timeblockId);
+        if (!tb) throw new Error("Timeblock not found");
+        const allRoutes = await db.listRoutes();
+        const existing = allRoutes.filter((r: any) => r.timeblockId === input.timeblockId).length;
+        const target = (tb as any).targetRoutes ?? 1;
+        const need = Math.max(0, target - existing);
+        const created: number[] = [];
+        const merchant = ((tb as any).merchant === "Flex" ? "LAF" : (tb as any).merchant) || "LAF";
+        for (let i = 0; i < need; i++) {
+          const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
+          const result = await db.createRoute({
+            routeCode: `${merchant}-${input.timeblockId}-${rand}`,
+            timeblockId: input.timeblockId,
+            merchant: merchant as any,
+            bookingType: ((tb as any).bookingType ?? "Direct") as any,
+            driverId: null,
+            stops: 0,
+            status: "Budgeted",
+          } as any);
+          const insertId = (result as { insertId?: number } | null)?.insertId;
+          if (insertId) created.push(insertId);
+        }
+        if (created.length) {
+          try { await db.recalculateAllRoutes({ triggeredBy: "route-auto-create" }); } catch (e) { console.error(e); }
+        }
+        return { success: true, createdIds: created, skippedExisting: existing };
+      }),
+    /**
+     * autoCreateForDate: run autoCreateForTimeblock for every timeblock on the given date.
+     */
+    autoCreateForDate: publicProcedure
+      .input(z.object({ date: z.string() /* YYYY-MM-DD */ }))
+      .mutation(async ({ input }) => {
+        const tbs = await db.listTimeblocks();
+        const matches = tbs.filter((t: any) => {
+          const d = t.blockDate;
+          const iso = d instanceof Date ? d.toISOString().slice(0, 10) : String(d).slice(0, 10);
+          return iso === input.date;
+        });
+        if (!matches.length) return { success: true, totalCreated: 0, totalSkipped: 0, blocks: 0 };
+        const allRoutes = await db.listRoutes();
+        let totalCreated = 0;
+        let totalSkipped = 0;
+        for (const tb of matches) {
+          const existing = allRoutes.filter((r: any) => r.timeblockId === (tb as any).id).length;
+          const target = (tb as any).targetRoutes ?? 1;
+          const need = Math.max(0, target - existing);
+          totalSkipped += existing;
+          const merchant = ((tb as any).merchant === "Flex" ? "LAF" : (tb as any).merchant) || "LAF";
+          for (let i = 0; i < need; i++) {
+            const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
+            await db.createRoute({
+              routeCode: `${merchant}-${(tb as any).id}-${rand}`,
+              timeblockId: (tb as any).id,
+              merchant: merchant as any,
+              bookingType: ((tb as any).bookingType ?? "Direct") as any,
+              driverId: null,
+              stops: 0,
+              status: "Budgeted",
+            } as any);
+            totalCreated++;
+          }
+        }
+        if (totalCreated) {
+          try { await db.recalculateAllRoutes({ triggeredBy: "route-auto-create-date" }); } catch (e) { console.error(e); }
+        }
+        return { success: true, totalCreated, totalSkipped, blocks: matches.length };
+      }),
     applyReference: publicProcedure
       .input(
         z.object({

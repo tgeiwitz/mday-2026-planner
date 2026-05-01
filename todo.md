@@ -315,3 +315,25 @@
 - [x] DATA_LINEAGE: updated intro callouts (per-route only) + new §2.0 Manual creation section
 - [x] vitests: routes.create returns id, referenceForecast shape, holiday persists per-route (sprint.test.ts — 27/27 + 2 skipped)
 - [x] Single checkpoint at end
+
+
+## v35 Rolling-window operating model + Auto-Create (FINAL go-live work)
+- [ ] Default Week Template stored in `global_settings` (per-day-of-week defaults: merchants, pickup times, targetRoutes, mileageRate, availabilityStart/End)
+- [ ] Backend: `timeblocks.autoCreateWeek({ weekOf })` — creates 7 timeblocks for the chosen Mon, skipping dates that already have any blocks; uses Default Week Template
+- [ ] Backend: `routes.autoCreateForDate({ date })` — for every timeblock on that date, creates `targetRoutes` placeholder routes (default merchant, stops=0, status=Budgeted) and triggers recalc
+- [ ] Backend: `routes.autoCreateForTimeblock({ timeblockId })` — same but scoped to one block
+- [ ] Timeblocks page: "Auto-Create Week" button (date picker, defaults to next Monday), shows what will be created and skipped
+- [ ] Routes page: "Auto-Create Routes" button (date or timeblock picker)
+- [ ] Rolling-window tabs on Timeblocks: This Week / +1w (Driver Schedule) / +2w (Sign-up Open) / +3w (Planning) — same labels surfaced on Drivers and Routes where relevant
+- [ ] Settings page: "Default Week Template" editor (per weekday: list of merchants/pickup times/targetRoutes)
+- [ ] Tests: autoCreateWeek skips existing dates; autoCreateForDate produces N routes per timeblock equal to targetRoutes
+- [ ] Update DATA_LINEAGE: §2.0a auto-create paths, §0 rolling-window operating model
+- [ ] Single checkpoint at end + final go-live checklist message to user
+
+
+## v36 Kill all dropdown selectors on data-entry pages
+- [x] Drivers: Vehicle field is the existing TypeAhead (already typeable, freely entered)
+- [x] Routes: replaced Driver, Status, Merchant, Booking Selects on inline rows with InlineEnumInput (datalist + free typing, Enter to commit)
+- [x] Routes: replaced Selects in the New Route dialog (Timeblock, Merchant, Booking) with InlineEnumInput
+- [x] Timeblocks: replaced Merchant + Booking Selects in the editor and the inline "Assign driver" Select with InlineEnumInput
+- [x] Tests still pass (27/27 + 2 skipped) after the refactor
