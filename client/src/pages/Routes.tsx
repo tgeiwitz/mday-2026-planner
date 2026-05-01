@@ -10,7 +10,17 @@ import {
 } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
 import { useMemo, useState } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 
 const STATUS_COLORS: Record<string, string> = {
   Budgeted: "bg-slate-100 text-slate-700 border-slate-200",
@@ -46,6 +56,23 @@ export default function Routes() {
       refetch();
       utils.planning.list.invalidate();
     },
+  });
+  const createRoute = trpc.routes.create.useMutation({
+    onSuccess: () => {
+      toast.success("Route created");
+      refetch();
+      refetchZones();
+      utils.planning.list.invalidate();
+      setNewRouteOpen(false);
+    },
+    onError: (e) => toast.error(e.message ?? "Failed to create route"),
+  });
+  const [newRouteOpen, setNewRouteOpen] = useState(false);
+  const [newRoute, setNewRoute] = useState<{ timeblockId: string; merchant: "LAF" | "BC" | "SMC" | "SMR"; bookingType: "Direct" | "Flex"; stops: string }>({
+    timeblockId: "",
+    merchant: "LAF",
+    bookingType: "Direct",
+    stops: "0",
   });
   const setZones = trpc.routes.setZones.useMutation({
     onSuccess: () => {
@@ -163,11 +190,85 @@ export default function Routes() {
           <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground font-medium">
             Route Operations
           </span>
-          <h1 className="page-title mt-1">Routes</h1>
-          <p className="page-subtitle max-w-3xl">
-            Flat list of every route. Filter by day, status, driver, or merchant.
-            Each row is inline-editable; expand for zone assignment.
-          </p>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h1 className="page-title mt-1">Routes</h1>
+              <p className="page-subtitle max-w-3xl">
+                Flat list of every route. Filter by day, status, driver, or merchant.
+                Each row is inline-editable; expand for zone assignment.
+              </p>
+            </div>
+            <Dialog open={newRouteOpen} onOpenChange={setNewRouteOpen}>
+              <DialogTrigger asChild>
+                <Button className="shrink-0"><Plus className="h-4 w-4 mr-2" /> New Route</Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Create Route</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs uppercase tracking-wider text-muted-foreground">Timeblock</label>
+                    <Select value={newRoute.timeblockId} onValueChange={(v) => setNewRoute({ ...newRoute, timeblockId: v })}>
+                      <SelectTrigger className="h-9"><SelectValue placeholder="Pick a timeblock" /></SelectTrigger>
+                      <SelectContent>
+                        {timeblocks.map((t) => (
+                          <SelectItem key={t.id} value={String(t.id)}>
+                            {fmtDate(toISODate(t.blockDate))} · {t.label} · {t.merchant}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs uppercase tracking-wider text-muted-foreground">Merchant</label>
+                      <Select value={newRoute.merchant} onValueChange={(v) => setNewRoute({ ...newRoute, merchant: v as "LAF" | "BC" | "SMC" | "SMR" })}>
+                        <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="LAF">LAF</SelectItem>
+                          <SelectItem value="BC">BC</SelectItem>
+                          <SelectItem value="SMC">SMC</SelectItem>
+                          <SelectItem value="SMR">SMR</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <label className="text-xs uppercase tracking-wider text-muted-foreground">Booking</label>
+                      <Select value={newRoute.bookingType} onValueChange={(v) => setNewRoute({ ...newRoute, bookingType: v as "Direct" | "Flex" })}>
+                        <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Direct">Direct</SelectItem>
+                          <SelectItem value="Flex">Flex</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs uppercase tracking-wider text-muted-foreground">Initial Stops (optional)</label>
+                    <Input type="number" min="0" value={newRoute.stops} onChange={(e) => setNewRoute({ ...newRoute, stops: e.target.value })} />
+                    <p className="text-[11px] text-muted-foreground mt-1">You can also add zones after creating the route — stops will sum from zones.</p>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button
+                    onClick={() => {
+                      if (!newRoute.timeblockId) { toast.error("Pick a timeblock"); return; }
+                      createRoute.mutate({
+                        timeblockId: Number(newRoute.timeblockId),
+                        merchant: newRoute.merchant,
+                        bookingType: newRoute.bookingType,
+                        stops: Number(newRoute.stops || 0),
+                      });
+                    }}
+                    disabled={createRoute.isPending}
+                  >
+                    {createRoute.isPending ? "Creating…" : "Create Route"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
 
           <div className="flex flex-wrap gap-3 mt-4 items-center">
             <div className="flex flex-col">
@@ -526,6 +627,7 @@ export default function Routes() {
                                   <span>Window: <span className="font-mono">{tb.availabilityStart}–{tb.availabilityEnd}</span></span>
                                 </div>
                               )}
+                              <ReferenceForecastPanel routeId={r.id} currentStops={r.stops} onApplied={() => { refetch(); utils.planning.list.invalidate(); }} />
                             </div>
                           </td>
                         </tr>
@@ -538,6 +640,54 @@ export default function Routes() {
           </div>
         </Card>
       </div>
+    </div>
+  );
+}
+
+function ReferenceForecastPanel({ routeId, currentStops, onApplied }: { routeId: number; currentStops: number; onApplied: () => void }) {
+  const { data: ref, isLoading } = trpc.routes.referenceForecast.useQuery({ routeId });
+  const apply = trpc.routes.applyReference.useMutation({
+    onSuccess: () => { toast.success("Applied to route"); onApplied(); },
+    onError: (e) => toast.error(e.message ?? "Apply failed"),
+  });
+
+  if (isLoading) {
+    return <div className="mt-4 text-xs text-muted-foreground">Loading reference forecast…</div>;
+  }
+  if (!ref) return null;
+
+  const cells: { label: string; value: number; subtitle: string }[] = [
+    { label: "2025 M-Day same DOW", value: ref.lyMDayStops, subtitle: "From last year's actuals" },
+    { label: "30-day trending", value: ref.trailing30Avg, subtitle: "Same-DOW avg, last 30 days" },
+    { label: "60-day trending", value: ref.trailing60Avg, subtitle: "Same-DOW avg, last 60 days" },
+  ];
+
+  return (
+    <div className="mt-5 border-t border-border/60 pt-4">
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-xs uppercase tracking-wider text-muted-foreground">Reference Forecast</div>
+        <div className="text-[11px] text-muted-foreground">Currently {currentStops} stops</div>
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        {cells.map((c) => (
+          <div key={c.label} className="rounded-lg border border-border bg-card p-3 flex flex-col">
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{c.label}</div>
+            <div className="text-2xl font-light tabular-nums mt-1">{c.value}</div>
+            <div className="text-[10px] text-muted-foreground">{c.subtitle}</div>
+            <button
+              type="button"
+              className="mt-2 text-xs px-2 py-1 rounded-md border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50"
+              disabled={apply.isPending || c.value === currentStops || c.value === 0}
+              onClick={() => apply.mutate({ routeId, stops: c.value })}
+            >
+              {c.value === currentStops ? "Already applied" : `Use ${c.value} stops`}
+            </button>
+          </div>
+        ))}
+      </div>
+      <p className="text-[11px] text-muted-foreground mt-2">
+        Holiday differential is per-route only — set it in the row above. Historical holiday $/stop is not yet stored; once it is, an &ldquo;Use 2025 holiday rate&rdquo; button will appear here.
+      </p>
     </div>
   );
 }

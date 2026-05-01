@@ -17,16 +17,19 @@ The planner derives every dollar figure from four primary sources. Nothing else 
 
 Two secondary sources participate when the relevant feature is in use:
 
-> `zone_task_history_2025` provides last-year actuals used by Daily Planning and the Merchant Share calculator's "LY M-Day same-DOW" column. `global_settings` stores the platform-wide constants (driver pay percent, platform fee percent, mileage rate, mileage threshold, holiday surcharge toggle and amount, last-sync timestamp).
+> `zone_task_history_2025` provides last-year actuals used by Daily Planning, the Merchant Share calculator's "LY M-Day same-DOW" column, and the per-route Reference Forecast panel introduced in v34. `global_settings` stores the platform-wide constants (driver pay percent, platform fee percent, mileage rate, mileage threshold, last-sync timestamp). **Important: `holiday differential` and `driver bonus` are NOT in `global_settings` — they are stored only on the `routes` row (`holidayPerStopSurcharge`, `driverBonus`) and default to 0. There is no global fallback. If you want a holiday differential on a route, set it on that route's row; otherwise it does not apply.**
 
 ---
 
 ## 2. How Routes Are Created
 
-There is **no `routes.create` tRPC endpoint exposed in the UI today**. Routes enter the system through three deterministic paths, in order of how often they fire in practice.
+Routes enter the system through four deterministic paths, in order of how often they fire in practice.
+
+### 2.0 Manual creation (NEW as of v34)
+The **Routes** page exposes a **+ New Route** button that calls `trpc.routes.create({ timeblockId, merchant, bookingType?, driverId?, stops?, notes? })`. The endpoint generates a unique `routeCode` (`<merchant>-<timeblockId>-<rand4>`), inserts the row with `status="Budgeted"`, and triggers a recalculation pass. Use this whenever a new timeblock fills up faster than the seed assumed.
 
 ### 2.1 Initial seed (one-time, per timeblock)
-When a timeblock is created or duplicated, the planner expects one **placeholder route per `targetRoutes`** to exist for that block. Today these placeholder rows are inserted directly into the `routes` table at setup time (via the seed/import script that built the M-Day window). Each row carries `timeblockId`, a `merchant`, a `bookingType`, an initial `stops` value, and `status="Budgeted"`. The `route_zones` join table records which zones the route is expected to serve and how many stops fall in each zone.
+When a timeblock is created or duplicated, the planner expects one **placeholder route per `targetRoutes`** to exist for that block. Seed rows are inserted directly into the `routes` table at setup time (via the seed/import script that built the M-Day window). Each row carries `timeblockId`, a `merchant`, a `bookingType`, an initial `stops` value, and `status="Budgeted"`. The `route_zones` join table records which zones the route is expected to serve and how many stops fall in each zone.
 
 ### 2.2 Edits via the Routes page
 The **Routes** page is the live editing surface. `trpc.routes.update` accepts patches to roughly any field on a route — `merchant`, `bookingType`, `driverId`, `stops`, `status`, the per-route `holidayPerStopSurcharge` and `driverBonus`, planned and actual fields, and notes. **Crucially, mutating any of `stops`, `driverId`, `status`, `payFloorOverride`, `payMaxOverride`, `holidayPerStopSurcharge`, or `driverBonus` automatically retriggers `recalculateAllRoutes()`** so the dollar fields stay consistent.

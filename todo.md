@@ -291,3 +291,27 @@
 - [ ] Drivers + Routes pages: inline override columns showing effective value + source badge
 - [ ] DATA_LINEAGE.md updated to describe the chain
 - [ ] vitest: precedence resolution for each field; unit test for recalc using a route override
+
+
+## v33 Vehicle multiplier + Assignment confirmation
+- [ ] drivers.vehicleType enum (sedan|van) default sedan
+- [ ] routes.vehicleType enum (sedan|van) nullable = inherit from driver
+- [ ] routes.assignmentConfirmed (0/1) + assignmentConfirmedAt (timestamp nullable)
+- [ ] Recalc: apply vehicle multiplier (sedan 0.80, van 1.10) to driver pay slice (the 75%) before mileage split + hourly clamp
+- [ ] Drivers page: Vehicle column inline-editable
+- [ ] Routes page: Vehicle column (effective + override badge), Confirmed checkbox/badge next to Driver
+- [ ] Dashboard: capacity tile shows Routes Budgeted / Driver Assigned / Driver Confirmed
+- [ ] DATA_LINEAGE updated for vehicle multiplier + assignment vs confirmation
+- [ ] Vitest: vehicle multiplier math + assignmentConfirmed toggle
+
+
+## v34 Go-live sprint (per-route holiday/bonus only, route creation, reference forecast, drivers cleanup)
+- [x] Recalc: stopped reading any global holidaySurchargePerStop — route.holidayPerStopSurcharge is the sole source (defaults to 0)
+- [x] driverBonus has no global fallback in recalc (route-only)
+- [x] `routes.create` tRPC endpoint: timeblockId + merchant, optional driver/stops/notes; auto-generates routeCode + triggers recalc
+- [x] Routes page: "+ New Route" dialog (timeblock + merchant + initial stops + driver), creates a row inline
+- [x] Per-route Reference Forecast panel (in expanded row) shows 2025 M-Day same-DOW stops, trailing-30d, trailing-60d; one-click “Use this” buttons write into route's stops
+- [x] Drivers UI: removed Status, Type, $ Pay Floor, $ Pay Max columns; added Hourly Min, Hourly Max, Vehicle (sedan/van); Pay % stays with placeholder .75
+- [x] DATA_LINEAGE: updated intro callouts (per-route only) + new §2.0 Manual creation section
+- [x] vitests: routes.create returns id, referenceForecast shape, holiday persists per-route (sprint.test.ts — 27/27 + 2 skipped)
+- [x] Single checkpoint at end

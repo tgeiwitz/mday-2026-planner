@@ -106,16 +106,26 @@ export const appRouter = router({
           payPctOverride: z.union([z.string(), z.number()]).nullable().optional(),
           payFloorOverride: z.union([z.string(), z.number()]).nullable().optional(),
           payMaxOverride: z.union([z.string(), z.number()]).nullable().optional(),
+          hourlyTargetMin: z.union([z.string(), z.number()]).nullable().optional(),
+          hourlyTargetMax: z.union([z.string(), z.number()]).nullable().optional(),
+          maxCapacity: z.number().int().nullable().optional(),
+          targetDuration: z.number().int().nullable().optional(),
+          targetStops: z.number().int().nullable().optional(),
+          vehicleType: z.enum(["sedan", "van"]).optional(),
         })
       )
       .mutation(async ({ input }) => {
         const { id, ...rest } = input;
         const data: Record<string, unknown> = {};
+        const decimalKeys = [
+          "timePerStopDiff", "payPctOverride", "payFloorOverride", "payMaxOverride",
+          "hourlyTargetMin", "hourlyTargetMax",
+        ];
         for (const [k, v] of Object.entries(rest)) {
           if (v === undefined) continue;
           if (v === null) {
             data[k] = null;
-          } else if (["timePerStopDiff", "payPctOverride", "payFloorOverride", "payMaxOverride"].includes(k)) {
+          } else if (decimalKeys.includes(k)) {
             data[k] = String(v);
           } else {
             data[k] = v;
@@ -124,7 +134,10 @@ export const appRouter = router({
         await db.updateDriver(id, data);
         // If a pay override (or time differential) changed, route estimates that depend
         // on this driver are stale — fire a global recalc so Routes / Profitability stay correct.
-        const recalcKeys = ["payPctOverride", "payFloorOverride", "payMaxOverride", "timePerStopDiff"];
+        const recalcKeys = [
+          "payPctOverride", "payFloorOverride", "payMaxOverride", "timePerStopDiff",
+          "hourlyTargetMin", "hourlyTargetMax", "vehicleType",
+        ];
         if (recalcKeys.some((k) => k in data)) {
           try {
             await db.recalculateAllRoutes({ triggeredBy: "driver-pay-override" });
@@ -285,6 +298,39 @@ export const appRouter = router({
   routes: router({
     list: publicProcedure.query(() => db.listRoutes()),
     listZones: publicProcedure.query(() => db.listAllRouteZones()),
+    create: publicProcedure
+      .input(
+        z.object({
+          timeblockId: z.number(),
+          merchant: z.enum(["LAF", "BC", "SMC", "SMR"]),
+          bookingType: z.enum(["Direct", "Flex"]).optional(),
+          driverId: z.number().nullable().optional(),
+          stops: z.number().int().min(0).optional(),
+          notes: z.string().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        // Generate a unique routeCode: <merchant>-<timeblock>-<random4>
+        const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
+        const routeCode = `${input.merchant}-${input.timeblockId}-${rand}`;
+        const result = await db.createRoute({
+          routeCode,
+          timeblockId: input.timeblockId,
+          merchant: input.merchant,
+          bookingType: input.bookingType ?? "Direct",
+          driverId: input.driverId ?? null,
+          stops: input.stops ?? 0,
+          notes: input.notes ?? null,
+          status: "Budgeted",
+        });
+        // Recalc so estDuration / fee / pay populate immediately based on globals + driver.
+        try {
+          await db.recalculateAllRoutes({ triggeredBy: "route-create" });
+        } catch (e) {
+          console.error("recalc after route create failed", e);
+        }
+        return { success: true, id: (result as { insertId?: number } | null)?.insertId ?? null };
+      }),
     update: publicProcedure
       .input(
         z.object({
@@ -317,6 +363,15 @@ export const appRouter = router({
           actualDuration: z.number().nullable().optional(),
           actualDriverPay: z.union([z.string(), z.number()]).nullable().optional(),
           completionNotes: z.string().nullable().optional(),
+          // v32 forecasting overrides (route override > driver override > global default)
+          maxCapacity: z.number().int().nullable().optional(),
+          targetDuration: z.number().int().nullable().optional(),
+          targetStops: z.number().int().nullable().optional(),
+          hourlyTargetMin: z.union([z.string(), z.number()]).nullable().optional(),
+          hourlyTargetMax: z.union([z.string(), z.number()]).nullable().optional(),
+          // v33 vehicle multiplier + assignment confirmation
+          vehicleType: z.enum(["sedan", "van"]).nullable().optional(),
+          assignmentConfirmed: z.number().int().min(0).max(1).optional(),
         })
       )
       .mutation(async ({ input }) => {
@@ -330,8 +385,14 @@ export const appRouter = router({
           "actualStops",
           "actualStopsReturned",
           "actualDuration",
+          "maxCapacity",
+          "targetDuration",
+          "targetStops",
+          "assignmentConfirmed",
         ]);
-        const passthroughKeys = new Set(["status", "notes", "completionNotes", "bookingType", "merchant"]);
+        const passthroughKeys = new Set([
+          "status", "notes", "completionNotes", "bookingType", "merchant", "vehicleType",
+        ]);
         const data: Record<string, unknown> = {};
         for (const [k, v] of Object.entries(rest)) {
           if (v === undefined) continue;
@@ -341,7 +402,25 @@ export const appRouter = router({
             data[k] = v === null ? null : String(v);
           }
         }
+        // Stamp confirmation timestamp when assignmentConfirmed flips to 1.
+        if ("assignmentConfirmed" in data) {
+          data.assignmentConfirmedAt = data.assignmentConfirmed === 1 ? new Date() : null;
+        }
         await db.updateRoute(id, data);
+        // Trigger recalc when fields that affect the math change.
+        const recalcKeys = [
+          "driverId", "stops", "holidayPerStopSurcharge", "driverBonus",
+          "payFloorOverride", "payMaxOverride",
+          "hourlyTargetMin", "hourlyTargetMax",
+          "vehicleType", "maxCapacity", "targetDuration", "targetStops",
+        ];
+        if (recalcKeys.some((k) => k in data)) {
+          try {
+            await db.recalculateAllRoutes({ triggeredBy: "route-update" });
+          } catch (e) {
+            console.error("recalc after route update failed", e);
+          }
+        }
         return { success: true };
       }),
     reviewKeep: publicProcedure
@@ -359,6 +438,27 @@ export const appRouter = router({
     history: publicProcedure
       .input(z.object({ routeId: z.number() }))
       .query(({ input }) => db.listRouteHistory(input.routeId)),
+    referenceForecast: publicProcedure
+      .input(z.object({ routeId: z.number() }))
+      .query(({ input }) => db.getRouteReferenceForecast(input.routeId)),
+    applyReference: publicProcedure
+      .input(
+        z.object({
+          routeId: z.number(),
+          stops: z.number().int().min(0).optional(),
+          holidayPerStopSurcharge: z.number().min(0).optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const patch: Record<string, unknown> = {};
+        if (typeof input.stops === "number") patch.stops = input.stops;
+        if (typeof input.holidayPerStopSurcharge === "number") {
+          patch.holidayPerStopSurcharge = input.holidayPerStopSurcharge.toFixed(2);
+        }
+        if (Object.keys(patch).length === 0) return { success: true };
+        await db.updateRoute(input.routeId, patch);
+        return { success: true };
+      }),
     setZones: publicProcedure
       .input(
         z.object({

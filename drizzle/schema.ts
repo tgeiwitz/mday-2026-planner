@@ -87,6 +87,15 @@ export const drivers = mysqlTable("drivers", {
   // If unset, falls back to the dollar overrides above, then to the timeblock defaults.
   hourlyTargetMin: decimal("hourlyTargetMin", { precision: 6, scale: 2 }),
   hourlyTargetMax: decimal("hourlyTargetMax", { precision: 6, scale: 2 }),
+  // Forecasting overrides. Null = inherit global default.
+  // maxCapacity = max stops this driver will accept on a single route.
+  // targetDuration = preferred minutes per route.
+  // targetStops = sweet-spot stop count for this driver.
+  maxCapacity: int("maxCapacity"),
+  targetDuration: int("targetDuration"),
+  targetStops: int("targetStops"),
+  // Vehicle: drives a multiplier on the 75% driver-pay slice. sedan=0.80, van=1.10.
+  vehicleType: mysqlEnum("vehicleType", ["sedan", "van"]).notNull().default("sedan"),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
@@ -168,6 +177,18 @@ export const routes = mysqlTable("routes", {
   estPlatformFee: decimal("estPlatformFee", { precision: 10, scale: 2 }).notNull().default("0"),
   payFloorOverride: decimal("payFloorOverride", { precision: 8, scale: 2 }),
   payMaxOverride: decimal("payMaxOverride", { precision: 8, scale: 2 }),
+  // Forecasting overrides. Null = inherit driver → global default.
+  maxCapacity: int("maxCapacity"),
+  targetDuration: int("targetDuration"),
+  targetStops: int("targetStops"),
+  hourlyTargetMin: decimal("hourlyTargetMin", { precision: 6, scale: 2 }),
+  hourlyTargetMax: decimal("hourlyTargetMax", { precision: 6, scale: 2 }),
+  // Vehicle override (null = inherit driver). sedan=0.80, van=1.10.
+  vehicleType: mysqlEnum("vehicleType", ["sedan", "van"]),
+  // Assignment confirmation: did the driver accept this assignment?
+  // Independent of route status (status = where ops is in the pipeline).
+  assignmentConfirmed: int("assignmentConfirmed").notNull().default(0),
+  assignmentConfirmedAt: timestamp("assignmentConfirmedAt"),
   holidayPerStopSurcharge: decimal("holidayPerStopSurcharge", { precision: 6, scale: 2 }).notNull().default("0"),
   driverBonus: decimal("driverBonus", { precision: 8, scale: 2 }).notNull().default("0"),
   status: mysqlEnum("status", ["Budgeted", "Planned", "Confirmed", "Processed", "Routed", "Completed"]).notNull().default("Budgeted"),

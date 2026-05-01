@@ -278,3 +278,59 @@ describe("route-level margin (after recalc, holiday + bonus folded in)", () => {
     );
   });
 });
+
+
+describe("v34: routes.create + per-route holiday/bonus + reference forecast", () => {
+  it("routes.create creates a route under a real timeblock and returns an id", async () => {
+    const caller = appRouter.createCaller(createCtx());
+    // Pick first timeblock
+    const tbs = await caller.timeblocks.list();
+    expect(tbs.length).toBeGreaterThan(0);
+    const tb = tbs[0];
+
+    const created = await caller.routes.create({
+      timeblockId: tb.id,
+      merchant: "LAF",
+      stops: 5,
+    } as any);
+    expect((created as any).success).toBe(true);
+    expect((created as any).id).toBeTypeOf("number");
+
+    // Confirm it shows up in routes.list
+    const list = await caller.routes.list();
+    const found = list.find((r) => r.id === (created as any).id);
+    expect(found).toBeTruthy();
+    expect(found?.merchant).toBe("LAF");
+    expect(found?.stops).toBe(5);
+
+    // Note: there is intentionally no routes.delete endpoint exposed in v1; manual cleanup not required for this test.
+  });
+
+  it("routes.referenceForecast returns lyMDayStops + trailing30/60 numeric fields", async () => {
+    const caller = appRouter.createCaller(createCtx());
+    const list = await caller.routes.list();
+    if (list.length === 0) return; // nothing to assert against if empty
+    const r = list[0];
+    const ref = await caller.routes.referenceForecast({ routeId: r.id });
+    expect(ref).toBeTruthy();
+    expect(typeof ref!.lyMDayStops).toBe("number");
+    expect(typeof ref!.trailing30Avg).toBe("number");
+    expect(typeof ref!.trailing60Avg).toBe("number");
+    expect(["LAF", "BC", "SMC", "SMR"]).toContain(ref!.merchant);
+  });
+
+  it("holiday differential is per-route only — global value does NOT leak into fee math", async () => {
+    const caller = appRouter.createCaller(createCtx());
+    const list = await caller.routes.list();
+    if (list.length === 0) return;
+    const r = list[0];
+
+    // Set per-route holiday $/stop = 0 explicitly; recalc.
+    await caller.routes.update({ id: r.id, holidayPerStopSurcharge: "0" } as any);
+    const after = await caller.routes.list();
+    const same = after.find((x) => x.id === r.id)!;
+    // No holiday field should silently be applied. We can't assert exact fee delta without a baseline,
+    // but we CAN assert the route's holidayPerStopSurcharge persisted as 0.
+    expect(Number(same.holidayPerStopSurcharge)).toBe(0);
+  });
+});

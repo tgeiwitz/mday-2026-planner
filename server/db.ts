@@ -381,6 +381,12 @@ export async function getGlobalSettings() {
     holidaySurchargeEnabled: false,
     targetDwellMinutes: "20",
     travelTimeSource: "2026" as "2026" | "lastYear" | "sixtyDay",
+    // Forecasting defaults (route override > driver override > these).
+    targetMaxCapacity: "30",
+    targetDuration: "180",
+    targetStops: "25",
+    targetHourlyMin: "28.00",
+    targetHourlyMax: "35.00",
   };
   if (!db) return defaults;
   const rows = await db.select().from(globalSettings);
@@ -405,6 +411,11 @@ export async function updateGlobalSettings(
     holidaySurchargeEnabled: boolean;
     targetDwellMinutes: string;
     travelTimeSource: "2026" | "lastYear" | "sixtyDay";
+    targetMaxCapacity: string;
+    targetDuration: string;
+    targetStops: string;
+    targetHourlyMin: string;
+    targetHourlyMax: string;
   }>
 ) {
   const db = await getDb();
@@ -428,8 +439,8 @@ export async function recalculateAllRoutes(opts: { triggeredBy?: string } = {}) 
   const mileagePayPerMile = parseFloat(settings.mileagePayPerMile);
   const mileageThreshold = parseFloat(settings.mileageThreshold);
   const platformFeePct = parseFloat(settings.platformFeePct);
-  const holidayPerStop = parseFloat(settings.holidaySurchargePerStop);
-  const holidayEnabled = settings.holidaySurchargeEnabled;
+  // Holiday differential is PER-ROUTE only (routes.holidayPerStopSurcharge).
+  // No global fallback by design — global value here is intentionally ignored.
   const globalTravelSource = (settings as { travelTimeSource?: string }).travelTimeSource ?? "2026";
   const globalTravelField: "travelTime2026" | "travelTimeLastYear" | "travelTime60Day" =
     globalTravelSource === "lastYear" ? "travelTimeLastYear"
@@ -445,6 +456,15 @@ export async function recalculateAllRoutes(opts: { triggeredBy?: string } = {}) 
       default:         return globalTravelField;
     }
   };
+
+  // Forecasting global defaults (route override > driver override > global default).
+  // We only consume `targetHourlyMin/Max` here; `targetMaxCapacity` /
+  // `targetDuration` / `targetStops` are advisory in the UI and don't gate
+  // recalc math directly today.
+  const globalHourlyMin = settings.targetHourlyMin
+    ? parseFloat(String(settings.targetHourlyMin)) : null;
+  const globalHourlyMax = settings.targetHourlyMax
+    ? parseFloat(String(settings.targetHourlyMax)) : null;
 
   const allRoutes = await db.select().from(routes);
   const allZones = await db.select().from(zoneMetrics);
@@ -539,13 +559,14 @@ export async function recalculateAllRoutes(opts: { triggeredBy?: string } = {}) 
         feeMode = "blended";
       }
     }
-    // Holiday differential: per-route override wins; otherwise global surcharge when toggle is on.
+    // Holiday differential: PER-ROUTE only (routes.holidayPerStopSurcharge). No global fallback.
+    // If a route should carry a holiday differential, it must be set explicitly on that route.
     const routeHolidayPerStop = r.holidayPerStopSurcharge ? parseFloat(String(r.holidayPerStopSurcharge)) : 0;
     if (routeHolidayPerStop > 0) {
       fee += routeHolidayPerStop * r.stops;
-    } else if (holidayEnabled) {
-      fee += holidayPerStop * r.stops;
     }
+    // Driver bonus: PER-ROUTE only (routes.driverBonus). Folded into estDriverPay below.
+    // No global fallback by design.
     // ---- v31 PAY MODEL ----
     // 75% of fee is the driver's all-in cut. Split it into Mileage Reimbursement
     // (miles × IRS-style rate) and Route Base Pay (the time portion).
@@ -557,7 +578,13 @@ export async function recalculateAllRoutes(opts: { triggeredBy?: string } = {}) 
     const effectivePct = driver && driver.payPctOverride
       ? parseFloat(String(driver.payPctOverride))
       : driverPayPct;
-    const grossDriverShare = fee * effectivePct;
+    // Vehicle multiplier on the driver-pay slice. Route override > driver default. sedan=0.80, van=1.10.
+    const VEHICLE_MULT: Record<string, number> = { sedan: 0.80, van: 1.10 };
+    const routeVehicle = (r as { vehicleType?: string | null }).vehicleType;
+    const driverVehicle = driver ? (driver as { vehicleType?: string | null }).vehicleType : null;
+    const effVehicle = routeVehicle ?? driverVehicle ?? "sedan";
+    const vehicleMult = VEHICLE_MULT[effVehicle] ?? 1.0;
+    const grossDriverShare = fee * effectivePct * vehicleMult;
     // Mileage rate: prefer the timeblock's mileageRate (per-mile), fall back to
     // global mileagePayPerMile. The global threshold is honored: only miles above
     // the threshold are reimbursed, matching prior behavior.
@@ -568,12 +595,19 @@ export async function recalculateAllRoutes(opts: { triggeredBy?: string } = {}) 
     // Hourly band: per-driver hourlyTargetMin/Max × estDuration (in hours).
     // If hourly is unset, fall back to dollar overrides, then timeblock floor/max.
     const hours = estDurationMin / 60;
+    // Hourly band precedence: route override > driver override > global default.
+    const routeHourlyMin = (r as { hourlyTargetMin?: string | null }).hourlyTargetMin
+      ? parseFloat(String((r as { hourlyTargetMin?: string | null }).hourlyTargetMin)) : null;
+    const routeHourlyMax = (r as { hourlyTargetMax?: string | null }).hourlyTargetMax
+      ? parseFloat(String((r as { hourlyTargetMax?: string | null }).hourlyTargetMax)) : null;
     const driverHourlyMin = driver && driver.hourlyTargetMin
       ? parseFloat(String(driver.hourlyTargetMin)) : null;
     const driverHourlyMax = driver && driver.hourlyTargetMax
       ? parseFloat(String(driver.hourlyTargetMax)) : null;
-    const hourlyFloor = driverHourlyMin !== null ? driverHourlyMin * hours : null;
-    const hourlyCeil = driverHourlyMax !== null ? driverHourlyMax * hours : null;
+    const effHourlyMin = routeHourlyMin ?? driverHourlyMin ?? globalHourlyMin;
+    const effHourlyMax = routeHourlyMax ?? driverHourlyMax ?? globalHourlyMax;
+    const hourlyFloor = effHourlyMin !== null ? effHourlyMin * hours : null;
+    const hourlyCeil = effHourlyMax !== null ? effHourlyMax * hours : null;
     const dollarFloor = r.payFloorOverride
       ? parseFloat(String(r.payFloorOverride))
       : driver && driver.payFloorOverride
@@ -1721,4 +1755,114 @@ export async function listWodelyAdjustments() {
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.routeCode.localeCompare(b.routeCode)));
   const total = rows.reduce((s, r) => s + r.wodelyAdjustment, 0);
   return { rows, total };
+}
+
+
+// ---------- Per-route Reference Forecast ----------
+// For a given route, return reference numbers we can use to seed stops + holiday $/stop:
+// - lyMDayStops: count of same-DOW tasks during 2025 M-Day week for the route's merchant (NOT yet zone-scoped — full merchant on that DOW)
+// - trailing30Avg / trailing60Avg: avg same-DOW count across trailing windows for the merchant
+// - lyMDayHolidayPerStop: heuristic — derived from any zoneTaskHistory2025 rows in the LY M-Day week
+//     where holiday surcharge can be inferred. Today we have no historical holiday differential
+//     captured, so this returns 0 unless a future migration backfills it. Field is reserved for
+//     when historical holiday data is loaded.
+//
+// Sources: zoneTaskHistory2025, wodelyTaskCache, routes (for the merchant + timeblock date)
+export type RouteReferenceForecast = {
+  routeId: number;
+  blockDateIso: string;
+  dow: number;
+  merchant: "LAF" | "BC" | "SMC" | "SMR";
+  lyMDayStops: number;
+  trailing30Avg: number;
+  trailing60Avg: number;
+  lyMDayHolidayPerStop: number;
+};
+
+export async function getRouteReferenceForecast(
+  routeId: number,
+): Promise<RouteReferenceForecast | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  const [r] = await db.select().from(routes).where(eq(routes.id, routeId)).limit(1);
+  if (!r) return null;
+  const [tb] = await db.select().from(timeblocks).where(eq(timeblocks.id, r.timeblockId)).limit(1);
+  if (!tb) return null;
+  const blockDate = tb.blockDate instanceof Date ? tb.blockDate : new Date(String(tb.blockDate));
+  const blockIso = utcDateToIso(blockDate);
+  const dow = blockDate.getUTCDay();
+  const merchant = r.merchant as "LAF" | "BC" | "SMC" | "SMR";
+
+  // Today (UTC) — trailing window ends "yesterday".
+  const today = new Date();
+  const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  const todayUtc = isoToUTCDate(todayIso);
+  const win60Start = new Date(todayUtc); win60Start.setUTCDate(win60Start.getUTCDate() - 60);
+  const win60End = new Date(todayUtc); win60End.setUTCDate(win60End.getUTCDate() - 1);
+  const win60StartIso = utcDateToIso(win60Start);
+  const win60EndIso = utcDateToIso(win60End);
+
+  // Historical 2025 rows in trailing window
+  const histRows = await db
+    .select()
+    .from(zoneTaskHistory2025)
+    .where(
+      _sql`${zoneTaskHistory2025.taskDate} >= ${win60StartIso} AND ${zoneTaskHistory2025.taskDate} <= ${win60EndIso} AND ${zoneTaskHistory2025.merchant} = ${merchant}`,
+    );
+  // 2026 rows in trailing window
+  const wodelyRows = await db
+    .select()
+    .from(wodelyTaskCache)
+    .where(
+      _sql`${wodelyTaskCache.deliveryDate} >= ${win60StartIso} AND ${wodelyTaskCache.deliveryDate} <= ${win60EndIso} AND ${wodelyTaskCache.merchant} = ${merchant}`,
+    );
+  const dailyTotals = new Map<string, number>();
+  for (const row of histRows) {
+    const iso = row.taskDate instanceof Date ? utcDateToIso(row.taskDate) : String(row.taskDate).slice(0, 10);
+    dailyTotals.set(iso, (dailyTotals.get(iso) || 0) + (row.taskCount || 0));
+  }
+  for (const row of wodelyRows) {
+    const iso = row.deliveryDate instanceof Date ? utcDateToIso(row.deliveryDate) : String(row.deliveryDate).slice(0, 10);
+    dailyTotals.set(iso, (dailyTotals.get(iso) || 0) + 1);
+  }
+
+  let count30 = 0, n30 = 0, count60 = 0, n60 = 0;
+  const cursor = new Date(win60Start);
+  while (cursor <= win60End) {
+    if (cursor.getUTCDay() === dow) {
+      const iso = utcDateToIso(cursor);
+      const v = dailyTotals.get(iso) || 0;
+      count60 += v; n60 += 1;
+      const daysFromToday = Math.round((todayUtc.getTime() - cursor.getTime()) / 86400000);
+      if (daysFromToday >= 1 && daysFromToday <= 30) { count30 += v; n30 += 1; }
+    }
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+
+  // LY M-Day: 2025-05-05..2025-05-10 (Mon..Sat). For Sunday rows, fall back to 2025-05-11.
+  const lyMonday = "2025-05-05";
+  const lyEnd = "2025-05-11";
+  const lyRows = await db
+    .select()
+    .from(zoneTaskHistory2025)
+    .where(
+      _sql`${zoneTaskHistory2025.taskDate} >= ${lyMonday} AND ${zoneTaskHistory2025.taskDate} <= ${lyEnd} AND ${zoneTaskHistory2025.merchant} = ${merchant}`,
+    );
+  let lyMDayStops = 0;
+  for (const row of lyRows) {
+    const d = row.taskDate instanceof Date ? row.taskDate : isoToUTCDate(String(row.taskDate).slice(0, 10));
+    if (d.getUTCDay() === dow) lyMDayStops += (row.taskCount || 0);
+  }
+
+  return {
+    routeId,
+    blockDateIso: blockIso,
+    dow,
+    merchant,
+    lyMDayStops,
+    trailing30Avg: n30 > 0 ? Math.round(count30 / n30) : 0,
+    trailing60Avg: n60 > 0 ? Math.round(count60 / n60) : 0,
+    lyMDayHolidayPerStop: 0, // placeholder until historical holiday data is loaded
+  };
 }

@@ -4,16 +4,6 @@ import { Input } from "@/components/ui/input";
 import { TypeAhead } from "@/components/TypeAhead";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
-
-const STATUS_OPTIONS = [
-  { value: "Confirmed", label: "Confirmed" },
-  { value: "Pending", label: "Pending" },
-  { value: "Placeholder", label: "Placeholder" },
-];
-const TYPE_OPTIONS = [
-  { value: "Lead", label: "Lead" },
-  { value: "New", label: "New" },
-];
 import { useState } from "react";
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
@@ -26,10 +16,14 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 
-function statusBadge(status: string) {
-  if (status === "Confirmed") return "bg-emerald-50 text-emerald-800 border border-emerald-200";
-  if (status === "Pending") return "bg-amber-50 text-amber-800 border border-amber-200";
-  return "bg-muted text-muted-foreground border border-border";
+const VEHICLE_OPTIONS = [
+  { value: "sedan", label: "Sedan (×0.80)" },
+  { value: "van", label: "Van (×1.10)" },
+];
+
+function vehicleBadge(v: string | null | undefined) {
+  if (v === "van") return "bg-indigo-50 text-indigo-800 border border-indigo-200";
+  return "bg-slate-50 text-slate-700 border border-slate-200";
 }
 
 export default function Drivers() {
@@ -40,9 +34,11 @@ export default function Drivers() {
       refetch();
       setOpen(false);
     },
+    onError: (e) => toast.error(e.message ?? "Failed to add driver"),
   });
   const update = trpc.drivers.update.useMutation({
     onSuccess: () => refetch(),
+    onError: (e) => toast.error(e.message ?? "Update failed"),
   });
   const del = trpc.drivers.delete.useMutation({
     onSuccess: () => {
@@ -54,9 +50,8 @@ export default function Drivers() {
   const [open, setOpen] = useState(false);
   const [newDriver, setNewDriver] = useState({
     name: "",
-    status: "Pending" as "Confirmed" | "Pending" | "Placeholder",
-    driverType: "Lead" as "Lead" | "New",
     timePerStopDiff: "0",
+    vehicleType: "sedan" as "sedan" | "van",
   });
 
   return (
@@ -69,7 +64,7 @@ export default function Drivers() {
             </span>
             <h1 className="page-title mt-1">Drivers</h1>
             <p className="page-subtitle">
-              Confirmed, pending, and placeholder drivers with per-driver time differentials and per-driver pay overrides. Two drivers on the same timeblock can earn different rates.
+              One row per driver. Vehicle determines the route-pay multiplier (Sedan ×0.80, Van ×1.10). Hourly Min/Max define the per-driver hourly band that the route pay must fall within after the 0.75 baseline + mileage. Two drivers signed up for the same timeblock can therefore earn different totals.
             </p>
           </div>
           <Dialog open={open} onOpenChange={setOpen}>
@@ -90,38 +85,40 @@ export default function Drivers() {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs uppercase tracking-wider text-muted-foreground">Status</label>
+                    <label className="text-xs uppercase tracking-wider text-muted-foreground">Vehicle</label>
                     <TypeAhead
-                      value={newDriver.status}
-                      options={STATUS_OPTIONS}
+                      value={newDriver.vehicleType}
+                      options={VEHICLE_OPTIONS}
                       strict
-                      onCommit={(v) => v && setNewDriver({ ...newDriver, status: v as any })}
+                      onCommit={(v) => v && setNewDriver({ ...newDriver, vehicleType: v as any })}
                     />
                   </div>
                   <div>
-                    <label className="text-xs uppercase tracking-wider text-muted-foreground">Type</label>
-                    <TypeAhead
-                      value={newDriver.driverType}
-                      options={TYPE_OPTIONS}
-                      strict
-                      onCommit={(v) => v && setNewDriver({ ...newDriver, driverType: v as any })}
+                    <label className="text-xs uppercase tracking-wider text-muted-foreground">
+                      Time/Stop Diff (min)
+                    </label>
+                    <Input
+                      type="number"
+                      step="0.5"
+                      value={newDriver.timePerStopDiff}
+                      onChange={(e) => setNewDriver({ ...newDriver, timePerStopDiff: e.target.value })}
                     />
                   </div>
                 </div>
-                <div>
-                  <label className="text-xs uppercase tracking-wider text-muted-foreground">
-                    Time per Stop Diff (min)
-                  </label>
-                  <Input
-                    type="number"
-                    step="0.5"
-                    value={newDriver.timePerStopDiff}
-                    onChange={(e) => setNewDriver({ ...newDriver, timePerStopDiff: e.target.value })}
-                  />
-                </div>
               </div>
               <DialogFooter>
-                <Button onClick={() => create.mutate({ ...newDriver, timePerStopDiff: newDriver.timePerStopDiff })}>
+                <Button
+                  onClick={() =>
+                    create.mutate({
+                      name: newDriver.name,
+                      // legacy required fields — not surfaced in UI any more
+                      status: "Pending",
+                      driverType: "Lead",
+                      timePerStopDiff: newDriver.timePerStopDiff,
+                      vehicleType: newDriver.vehicleType,
+                    } as any)
+                  }
+                >
                   Add
                 </Button>
               </DialogFooter>
@@ -137,12 +134,11 @@ export default function Drivers() {
             <thead>
               <tr>
                 <th>Driver</th>
-                <th>Status</th>
-                <th>Type</th>
-                <th className="text-right">Time/Stop Diff</th>
-                <th className="text-right" title="Per-driver share of route fee. Blank = use global driverPayPct (75%).">Pay %</th>
-                <th className="text-right" title="Per-driver pay floor. Blank = inherit timeblock minPayFloor.">Pay Floor</th>
-                <th className="text-right" title="Per-driver pay max. Blank = inherit timeblock maxPayFloor.">Pay Max</th>
+                <th>Vehicle</th>
+                <th className="text-right" title="Per-driver share of route fee. Blank = use global 0.75. Founding drivers can override.">Pay %</th>
+                <th className="text-right" title="Hourly target floor. Driver Pay must end up at or above this × estimated hours. If short, a Wodely workforce-task adjustment grosses it up.">Hourly Min</th>
+                <th className="text-right" title="Hourly target ceiling. Driver Pay caps at this × estimated hours; surplus stays in the platform 25%.">Hourly Max</th>
+                <th className="text-right" title="Per-driver minutes added (or subtracted) to the per-stop time baseline. New drivers usually +0.5–1 min.">Time/Stop Diff</th>
                 <th></th>
               </tr>
             </thead>
@@ -160,33 +156,17 @@ export default function Drivers() {
                   </td>
                   <td>
                     <div className="flex items-center gap-2">
-                      <Badge className={`${statusBadge(d.status)} font-normal`}>{d.status}</Badge>
+                      <Badge className={`${vehicleBadge((d as any).vehicleType)} font-normal`}>
+                        {(d as any).vehicleType === "van" ? "Van" : "Sedan"}
+                      </Badge>
                       <TypeAhead
                         className="w-[130px]"
-                        value={d.status}
-                        options={STATUS_OPTIONS}
+                        value={(d as any).vehicleType ?? "sedan"}
+                        options={VEHICLE_OPTIONS}
                         strict
-                        onCommit={(v) => v && v !== d.status && update.mutate({ id: d.id, status: v as any })}
+                        onCommit={(v) => v && v !== (d as any).vehicleType && update.mutate({ id: d.id, vehicleType: v as any })}
                       />
                     </div>
-                  </td>
-                  <td>
-                    <TypeAhead
-                      className="w-[110px]"
-                      value={d.driverType}
-                      options={TYPE_OPTIONS}
-                      strict
-                      onCommit={(v) => v && v !== d.driverType && update.mutate({ id: d.id, driverType: v as any })}
-                    />
-                  </td>
-                  <td className="text-right">
-                    <Input
-                      className="h-8 w-24 ml-auto text-right font-mono border-transparent bg-transparent hover:border-border focus:border-ring"
-                      type="number"
-                      step="0.5"
-                      defaultValue={String(d.timePerStopDiff)}
-                      onBlur={(e) => update.mutate({ id: d.id, timePerStopDiff: e.target.value })}
-                    />
                   </td>
                   <td className="text-right">
                     <Input
@@ -205,30 +185,39 @@ export default function Drivers() {
                   </td>
                   <td className="text-right">
                     <Input
-                      className="h-8 w-24 ml-auto text-right font-mono border-transparent bg-transparent hover:border-border focus:border-ring"
+                      className="h-8 w-20 ml-auto text-right font-mono border-transparent bg-transparent hover:border-border focus:border-ring"
                       type="number"
-                      step="1"
+                      step="0.5"
                       min="0"
                       placeholder="—"
-                      defaultValue={d.payFloorOverride ?? ""}
+                      defaultValue={(d as any).hourlyTargetMin ?? ""}
                       onBlur={(e) => {
                         const raw = e.target.value.trim();
-                        update.mutate({ id: d.id, payFloorOverride: raw === "" ? null : raw });
+                        update.mutate({ id: d.id, hourlyTargetMin: raw === "" ? null : raw } as any);
                       }}
                     />
                   </td>
                   <td className="text-right">
                     <Input
-                      className="h-8 w-24 ml-auto text-right font-mono border-transparent bg-transparent hover:border-border focus:border-ring"
+                      className="h-8 w-20 ml-auto text-right font-mono border-transparent bg-transparent hover:border-border focus:border-ring"
                       type="number"
-                      step="1"
+                      step="0.5"
                       min="0"
                       placeholder="—"
-                      defaultValue={d.payMaxOverride ?? ""}
+                      defaultValue={(d as any).hourlyTargetMax ?? ""}
                       onBlur={(e) => {
                         const raw = e.target.value.trim();
-                        update.mutate({ id: d.id, payMaxOverride: raw === "" ? null : raw });
+                        update.mutate({ id: d.id, hourlyTargetMax: raw === "" ? null : raw } as any);
                       }}
+                    />
+                  </td>
+                  <td className="text-right">
+                    <Input
+                      className="h-8 w-20 ml-auto text-right font-mono border-transparent bg-transparent hover:border-border focus:border-ring"
+                      type="number"
+                      step="0.5"
+                      defaultValue={String(d.timePerStopDiff)}
+                      onBlur={(e) => update.mutate({ id: d.id, timePerStopDiff: e.target.value })}
                     />
                   </td>
                   <td className="text-right">
@@ -242,6 +231,9 @@ export default function Drivers() {
           </table>
           </div>
         </Card>
+        <p className="text-xs text-muted-foreground mt-3">
+          Driver-level Status and Type were removed — confirmation now lives per-route on the Routes page (each assignment can be marked Confirmed independently). Pay Floor / Pay Max in dollars were replaced by the Hourly band; if you need a hard $ override on a single route, do it on the Routes page row.
+        </p>
       </div>
     </div>
   );
