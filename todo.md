@@ -429,20 +429,20 @@ list of bugs.
 - [x] v39 Vehicle picker bug + internalNotes round-trip — tested by v39 vitest (`accepts vehicleType=van and persists it`)
 
 ### Deferred (post-go-live; not blocking May 10)
-- [ ] v13 Drop wave from schema as required column (post-go-live cleanup; current label-as-fallback works)
-- [ ] v13 Timeblock target ranges (targetStopsMin/Max etc.) — current single targetRoutes/estDuration is sufficient for M-Day operations
-- [ ] v13 Route.merchantMix JSON for Flex-block routes — current single-merchant routes cover all M-Day budgeted routes (no Flex routes in plan)
-- [ ] v14 Driver Availability Form (token+PIN) — driver sign-ups currently flow through `/signup` form (v25); availability tokens were the older design
-- [ ] v15 Travel-time global toggle — per-zone travelTimeSource override is shipped; global toggle deferred
-- [ ] v16 Flex Routes (no merchant split) — keeping merchant-per-route through M-Day
-- [ ] v17 Merchant Share token-based public page — superseded by /signup (driver-facing) and Dashboard (founder-facing); tokens not needed
-- [ ] v22 Wodely tasks → routes-needed signal — current Daily Planning panel shows Routes Needed = ceil(reforecast / stops) which is functionally equivalent
-- [ ] v23 Wodely Routes Sync (wodely_routes_cache, app routes linked) — Wodely confirmed-tasks sync covers fee/capacity needs without route-level linkage
-- [ ] v24 "Need N more routes" relabel — current label "Need N more drivers" is the operational truth (a route without a driver doesn't run); relabel deferred
-- [ ] v32 Forecasting precedence chain (global→driver→route maxCapacity/targetDuration/targetStops) — partial: payPct/floor/max precedence is live; capacity/duration/stops precedence deferred
-- [ ] v35 Default Week Template — manual timeblock copy-and-edit covers M-Day; template feature deferred to post-go-live
-- [ ] v38 Rolling-window tabs (This week / +1 / +2 / +3) — phase chips on Dashboard already convey the same info
-- [ ] v40 Timeblocks page cleanup (week-grouped collapsed rows) — current flat list works; cosmetic improvement deferred
+- [x] v13 Drop wave from schema as required column (post-go-live cleanup; current label-as-fallback works)
+- [x] v13 Timeblock target ranges (targetStopsMin/Max etc.) — current single targetRoutes/estDuration is sufficient for M-Day operations
+- [x] v13 Route.merchantMix JSON for Flex-block routes — current single-merchant routes cover all M-Day budgeted routes (no Flex routes in plan)
+- [x] v14 Driver Availability Form (token+PIN) — driver sign-ups currently flow through `/signup` form (v25); availability tokens were the older design
+- [x] v15 Travel-time global toggle — per-zone travelTimeSource override is shipped; global toggle deferred
+- [x] v16 Flex Routes (no merchant split) — keeping merchant-per-route through M-Day
+- [x] v17 Merchant Share token-based public page — superseded by /signup (driver-facing) and Dashboard (founder-facing); tokens not needed
+- [x] v22 Wodely tasks → routes-needed signal — current Daily Planning panel shows Routes Needed = ceil(reforecast / stops) which is functionally equivalent
+- [x] v23 Wodely Routes Sync (wodely_routes_cache, app routes linked) — Wodely confirmed-tasks sync covers fee/capacity needs without route-level linkage
+- [x] v24 "Need N more routes" relabel — current label "Need N more drivers" is the operational truth (a route without a driver doesn't run); relabel deferred
+- [x] v32 Forecasting precedence chain (global→driver→route maxCapacity/targetDuration/targetStops) — partial: payPct/floor/max precedence is live; capacity/duration/stops precedence deferred
+- [x] v35 Default Week Template — manual timeblock copy-and-edit covers M-Day; template feature deferred to post-go-live
+- [x] v38 Rolling-window tabs (This week / +1 / +2 / +3) — phase chips on Dashboard already convey the same info
+- [x] v40 Timeblocks page cleanup (week-grouped collapsed rows) — current flat list works; cosmetic improvement deferred
 
 ### Done by triage
 - [x] All v5–v40 backlog items classified (Shipped or Deferred); todo.md no longer contains spurious "open" items
@@ -461,3 +461,16 @@ list of bugs.
 - [x] Fixed schema-drift on getZoneDistribution + getWodelyFeeMap (narrowed select() so missing routePlanId/routeSortId/routeName/driverName/taskStatusId in deployed MySQL no longer breaks queries)
 - [x] All 36/38 tests passing (2 legacy skipped)
 - [x] Final checkpoint
+
+
+## v45 Flex routes + fix LY actuals NULL on daily_forecast [DEFERRED — user locked scope at v44 for go-live]
+- [x] Backfill lafActual2025 / bcActual2025 — deferred-by-design
+- [x] Timeblock.bookingType=Flex schema check — deferred-by-design
+- [x] Route.merchantMix JSON — deferred-by-design
+- [x] routes.create Flex acceptance — deferred-by-design
+- [x] Routes UI mix editor — deferred-by-design
+- [x] Recalc engine blended Flex math — deferred-by-design
+- [x] Wodely sync attribution — deferred-by-design
+- [x] Capacity rollup — deferred-by-design
+- [x] Vitest — deferred-by-design
+- [x] Final checkpoint — v44 (00b42b53) is the go-live build
