@@ -963,8 +963,6 @@ export const appRouter = router({
           mileagePayPerMile: z.string().optional(),
           mileageThreshold: z.string().optional(),
           platformFeePct: z.string().optional(),
-          holidaySurchargePerStop: z.string().optional(),
-          holidaySurchargeEnabled: z.boolean().optional(),
           targetDwellMinutes: z.string().optional(),
           travelTimeSource: z.enum(["2026", "lastYear", "sixtyDay"]).optional(),
         })

@@ -1,6 +1,5 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import { trpc } from "@/lib/trpc";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
@@ -32,8 +31,6 @@ export default function Settings() {
     mileagePayPerMile: "0.50",
     mileageThreshold: "30",
     platformFeePct: "0.10",
-    holidaySurchargePerStop: "5.00",
-    holidaySurchargeEnabled: false,
     targetDwellMinutes: "20",
   });
 
@@ -44,8 +41,6 @@ export default function Settings() {
         mileagePayPerMile: String(settings.mileagePayPerMile),
         mileageThreshold: String(settings.mileageThreshold),
         platformFeePct: String(settings.platformFeePct),
-        holidaySurchargePerStop: String(settings.holidaySurchargePerStop),
-        holidaySurchargeEnabled: !!settings.holidaySurchargeEnabled,
         targetDwellMinutes: String(settings.targetDwellMinutes),
       });
     }
@@ -123,30 +118,11 @@ export default function Settings() {
         <Card className="border-border/60">
           <CardContent className="pt-6 space-y-4">
             <div>
-              <h3 className="font-serif text-lg mb-1">Holiday Surcharge</h3>
-              <p className="text-xs text-muted-foreground mb-4">
-                Per-stop surcharge toggle for holiday week pricing.
+              <h3 className="font-serif text-lg mb-1">Holiday Differential & Bonuses</h3>
+              <p className="text-xs text-muted-foreground">
+                Holiday differentials and driver bonuses are configured <strong>per route</strong> on the Routes
+                page. There is no global default — every route declares its own surcharge and bonus.
               </p>
-              <div className="grid grid-cols-2 gap-4 items-end">
-                <div>
-                  <label className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                    Surcharge per Stop ($)
-                  </label>
-                  <Input
-                    value={form.holidaySurchargePerStop}
-                    onChange={(e) => setForm({ ...form, holidaySurchargePerStop: e.target.value })}
-                  />
-                </div>
-                <div className="flex items-center gap-3 pb-2">
-                  <Switch
-                    checked={form.holidaySurchargeEnabled}
-                    onCheckedChange={(v) => setForm({ ...form, holidaySurchargeEnabled: v })}
-                  />
-                  <span className="text-sm">
-                    {form.holidaySurchargeEnabled ? "Enabled" : "Disabled"}
-                  </span>
-                </div>
-              </div>
             </div>
           </CardContent>
         </Card>
