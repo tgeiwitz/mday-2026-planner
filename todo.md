@@ -384,3 +384,18 @@
 - [x] Made route-margin test resilient to Wodely fee-share dilution from prior test runs (25% drift tolerance)
 - [x] Test suite: 32 passing / 2 legacy skipped
 - [x] Save final go-live checkpoint
+
+
+## v42 Automatic zone inference for reforecast (no driver / no manual zone clicks required)
+- [x] Build inferZoneMixForRoute(routeId) helper using largest-remainder allocation
+- [x] Source 1 deferred: Wodely cache has no zoneId yet (212/212 NULL); skipped per data reality
+- [x] Source 2 (primary): LY same-DOW zone distribution from zone_task_history_2025 (744 rows)
+- [x] Source 2b: M-Day 2025 weekend specifically (May 9-10) when route falls in M-Day week
+- [x] Source 3 (last resort): zone_metrics top-3 volume zones, even allocation
+- [x] Wire helper into routes.create — auto-populate route_zones on new route
+- [x] Wire helper into routes.update when stops becomes >0 — covers autoCreateForDate updates
+- [x] Backfill the 10 empty routes via autoAssignZonesAcrossAllRoutes — patched 10/10 -> 50 route_zones rows
+- [x] Verify estDuration > 0 (40min) and estMileage > 0 (10mi) on all 10 routes; estRouteFee jumped from $27.48 -> $64.69
+- [x] Mileage pay still $0 because miles=10 < threshold=30 by design (correct behavior)
+- [x] Add vitest covering inferZoneMixForRoute + autoAssignZonesIfMissing idempotency
+- [x] Added routes.delete API + sprint test cleanup so subsequent runs don't dilute Wodely fee distribution

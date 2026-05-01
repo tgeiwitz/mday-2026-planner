@@ -1,4 +1,5 @@
 import { eq, and, asc, sql, desc, gte, lte } from "drizzle-orm";
+import { sql as _sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser,
@@ -13,6 +14,7 @@ import {
   routeHistory,
   globalSettings,
   historicalDaily2025,
+  zoneTaskHistory2025,
 } from "../drizzle/schema";
 // timeblocks already imported above for db helpers
 import { ENV } from "./_core/env";
@@ -269,6 +271,14 @@ export async function updateRoute(id: number, data: Partial<typeof routes.$infer
 
   await db.update(routes).set(patch).where(eq(routes.id, id));
 
+  // If stops just became > 0 and no zone mix exists yet, auto-assign zones from
+  // historical signal so the reforecast (fee, miles, duration, pay) populates
+  // without anyone touching a zone editor.
+  if ("stops" in data && Number((data as any).stops) > 0) {
+    try { await autoAssignZonesIfMissing(id); }
+    catch (e) { console.error("auto-zone-assign in updateRoute failed", e); }
+  }
+
   // Auto-recalc whenever any input that drives route economics changes.
   const triggerKeys = ["stops", "driverId", "status", "payFloorOverride", "payMaxOverride", "holidayPerStopSurcharge", "driverBonus"];
   if (triggerKeys.some((k) => k in data)) {
@@ -299,6 +309,176 @@ export async function setRouteZones(routeId: number, zones: { zoneId: number; ta
   }
   // Auto-recalc so duration/mileage/fee reflect new zone assignments immediately.
   await recalculateAllRoutes({ triggeredBy: `setRouteZones:${routeId}` });
+}
+
+/**
+ * Infer a zone mix for a route from historical signal so the planner can produce
+ * a complete reforecast (fee, miles, duration, pay) without anyone manually
+ * picking zones in the UI.
+ *
+ * Sources, in order of preference:
+ *   1. LY same-DOW per-merchant zone distribution from zone_task_history_2025
+ *      (M-Day weekend if the route is in M-Day week, else trailing 30d window).
+ *   2. LY overall same-merchant distribution if same-DOW is too thin (<5 tasks).
+ *   3. zone_metrics ordered by recent merchant volume; even allocation across
+ *      the top 3 zones if no historical data at all.
+ *
+ * The output is normalized so total taskCount === route.stops.
+ */
+export async function inferZoneMixForRoute(
+  routeId: number,
+): Promise<{ zoneId: number; taskCount: number }[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const [r] = await db.select().from(routes).where(eq(routes.id, routeId)).limit(1);
+  if (!r) return [];
+  const stops = r.stops || 0;
+  if (stops <= 0) return [];
+
+  const merchant = r.merchant as "LAF" | "BC" | "SMC" | "SMR";
+  const [tb] = await db.select().from(timeblocks).where(eq(timeblocks.id, r.timeblockId)).limit(1);
+  const blockDate = tb?.blockDate instanceof Date
+    ? tb.blockDate
+    : tb ? new Date(String(tb.blockDate)) : new Date();
+  const dow = blockDate.getUTCDay();
+
+  // Collect candidate distributions from history. Use M-Day 2025 weekend (May 9-10)
+  // when the route falls in M-Day week (Sun May 3 .. Sun May 10 2026); otherwise
+  // use a wide same-DOW window across the whole 2025 dataset.
+  const blockIso = blockDate.toISOString().slice(0, 10);
+  const inMdayWeek = blockIso >= "2026-05-03" && blockIso <= "2026-05-10";
+
+  // ---- Source 1: same-DOW historical ----
+  let histRows: Array<{ zoneId: number; taskCount: number }> = [];
+  if (inMdayWeek) {
+    // M-Day weekend bucket: 2025-05-09 + 2025-05-10
+    const rows = await db
+      .select()
+      .from(zoneTaskHistory2025)
+      .where(
+        _sql`${zoneTaskHistory2025.merchant} = ${merchant} AND ${zoneTaskHistory2025.taskDate} IN ('2025-05-09','2025-05-10')`,
+      );
+    histRows = rows.map((x) => ({ zoneId: x.zoneId, taskCount: Number(x.taskCount) || 0 }));
+  } else {
+    const rows = await db
+      .select()
+      .from(zoneTaskHistory2025)
+      .where(_sql`${zoneTaskHistory2025.merchant} = ${merchant}`);
+    // filter to same DOW
+    histRows = rows
+      .filter((row) => {
+        const d = row.taskDate instanceof Date ? row.taskDate : new Date(String(row.taskDate));
+        return d.getUTCDay() === dow;
+      })
+      .map((x) => ({ zoneId: x.zoneId, taskCount: Number(x.taskCount) || 0 }));
+  }
+
+  // Aggregate by zoneId
+  const byZone = new Map<number, number>();
+  for (const h of histRows) {
+    byZone.set(h.zoneId, (byZone.get(h.zoneId) ?? 0) + h.taskCount);
+  }
+  let total = Array.from(byZone.values()).reduce((s, x) => s + x, 0);
+
+  // ---- Source 2: overall merchant distribution (any DOW) ----
+  if (total < 5) {
+    byZone.clear();
+    const rows = await db
+      .select()
+      .from(zoneTaskHistory2025)
+      .where(_sql`${zoneTaskHistory2025.merchant} = ${merchant}`);
+    for (const row of rows) {
+      const tc = Number(row.taskCount) || 0;
+      byZone.set(row.zoneId, (byZone.get(row.zoneId) ?? 0) + tc);
+    }
+    total = Array.from(byZone.values()).reduce((s, x) => s + x, 0);
+  }
+
+  // ---- Source 3: zone_metrics top-volume zones, even allocation ----
+  if (total <= 0) {
+    const zm = await db
+      .select()
+      .from(zoneMetrics)
+      .orderBy(
+        merchant === "LAF"
+          ? _sql`laf_volume_2025 DESC`
+          : _sql`bc_volume_2025 DESC`,
+      )
+      .limit(3);
+    if (zm.length === 0) return [];
+    const per = Math.max(1, Math.floor(stops / zm.length));
+    const out = zm.map((z) => ({ zoneId: z.zoneId, taskCount: per }));
+    // distribute remainder to first zone
+    const sum = out.reduce((s, x) => s + x.taskCount, 0);
+    if (sum < stops && out.length > 0) out[0].taskCount += stops - sum;
+    return out;
+  }
+
+  // Largest-remainder method: scale proportionally so taskCounts sum to `stops`.
+  type Entry = { zoneId: number; share: number; floor: number; remainder: number };
+  const entries: Entry[] = Array.from(byZone.entries())
+    .map(([zoneId, count]) => {
+      const share = (count / total) * stops;
+      return { zoneId, share, floor: Math.floor(share), remainder: share - Math.floor(share) };
+    })
+    .sort((a, b) => b.share - a.share);
+  // Drop zones whose share is too small to round to even 1 unit *and* not in the top results
+  let assigned = entries.reduce((s, e) => s + e.floor, 0);
+  let remaining = stops - assigned;
+  // Distribute remaining stops to entries with the largest fractional remainder
+  const byRemainder = [...entries].sort((a, b) => b.remainder - a.remainder);
+  for (const e of byRemainder) {
+    if (remaining <= 0) break;
+    e.floor += 1;
+    remaining -= 1;
+  }
+  const result = entries
+    .filter((e) => e.floor > 0)
+    .map((e) => ({ zoneId: e.zoneId, taskCount: e.floor }));
+  // Sanity: ensure sum === stops; if mismatch (shouldn't happen), push residual to top zone.
+  const sum = result.reduce((s, x) => s + x.taskCount, 0);
+  if (sum !== stops && result.length > 0) result[0].taskCount += stops - sum;
+  return result;
+}
+
+/**
+ * If a route has no zone assignments, infer one from history and persist it.
+ * No-op when zones already exist or no inference is possible. Caller is
+ * responsible for triggering recalc afterwards (typically the next
+ * recalculateAllRoutes call covers it).
+ */
+export async function autoAssignZonesIfMissing(routeId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  const existing = await db.select().from(routeZones).where(eq(routeZones.routeId, routeId));
+  if (existing.length > 0) return false;
+  const mix = await inferZoneMixForRoute(routeId);
+  if (mix.length === 0) return false;
+  await db.insert(routeZones).values(mix.map((z) => ({ routeId, ...z })));
+  return true;
+}
+
+/**
+ * Run autoAssignZonesIfMissing across every route that has zero zones. Returns
+ * the count of routes patched. Triggers a single recalc at the end if any
+ * patches were applied.
+ */
+export async function autoAssignZonesAcrossAllRoutes(): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const allRoutes = await db.select().from(routes);
+  const allZones = await db.select().from(routeZones);
+  const haveZones = new Set(allZones.map((z) => z.routeId));
+  let patched = 0;
+  for (const r of allRoutes) {
+    if (haveZones.has(r.id)) continue;
+    const ok = await autoAssignZonesIfMissing(r.id);
+    if (ok) patched += 1;
+  }
+  if (patched > 0) {
+    await recalculateAllRoutes({ triggeredBy: "auto-zone-assign" });
+  }
+  return patched;
 }
 
 // Manual review-resolution helpers for routes that were locked (status=Routed)
@@ -1079,8 +1259,7 @@ export async function getPlanningView() {
 
 // Zone distribution: for a date range, per-zone and per-merchant task counts + avg fee + % of total.
 // Sources: zone_task_history_2025 for 2025 dates; wodely_task_cache for 2026 dates (by completed order).
-import { zoneTaskHistory2025 } from "../drizzle/schema";
-import { sql as _sql } from "drizzle-orm";
+// (zoneTaskHistory2025 + _sql imported at top of file)
 
 export async function getZoneDistribution(startIso: string, endIso: string) {
   const db = await getDb();

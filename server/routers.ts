@@ -371,13 +371,21 @@ export const appRouter = router({
           notes: input.notes ?? null,
           status: "Budgeted",
         });
+        const newId = (result as { insertId?: number } | null)?.insertId ?? null;
+        // Auto-assign zones from LY same-DOW historical distribution so the
+        // reforecast (fee, miles, duration, pay) populates without anyone
+        // touching a zone editor. No-op if route was created with stops=0.
+        if (newId) {
+          try { await db.autoAssignZonesIfMissing(newId); }
+          catch (e) { console.error("auto-zone-assign after create failed", e); }
+        }
         // Recalc so estDuration / fee / pay populate immediately based on globals + driver.
         try {
           await db.recalculateAllRoutes({ triggeredBy: "route-create" });
         } catch (e) {
           console.error("recalc after route create failed", e);
         }
-        return { success: true, id: (result as { insertId?: number } | null)?.insertId ?? null };
+        return { success: true, id: newId };
       }),
     update: publicProcedure
       .input(
@@ -598,6 +606,12 @@ export const appRouter = router({
       await db.recalculateAllRoutes();
       return { success: true };
     }),
+    delete: publicProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.deleteRoute(input.id);
+        return { success: true };
+      }),
   }),
 
   wodely: router({

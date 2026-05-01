@@ -18,7 +18,9 @@ describe("snapshot endpoints", () => {
     expect(result.success).toBe(true);
     expect(typeof result.id).toBe("number");
     const after = await caller.snapshots.list();
-    expect(after.length).toBeGreaterThan(before.length);
+    // Snapshot list is capped (default 30). Assert that our new run is in the list,
+    // not that count strictly grew (it can hit the cap).
+    expect(after.some((r: { id: number }) => r.id === result.id)).toBe(true);
     const rows = await caller.snapshots.getRows({ runId: result.id });
     expect(Array.isArray(rows)).toBe(true);
     expect(rows.length).toBeGreaterThan(0);

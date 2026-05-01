@@ -306,7 +306,9 @@ describe("v34: routes.create + per-route holiday/bonus + reference forecast", ()
     expect(found?.merchant).toBe("LAF");
     expect(found?.stops).toBe(5);
 
-    // Note: there is intentionally no routes.delete endpoint exposed in v1; manual cleanup not required for this test.
+    // Cleanup: delete the route so repeated test runs don't accumulate rows on this
+    // timeblock and dilute the Wodely fee share for downstream tests.
+    await caller.routes.delete({ id: (created as any).id });
   });
 
   it("routes.referenceForecast returns lyMDayStops + trailing30/60 numeric fields", async () => {
