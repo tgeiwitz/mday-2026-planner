@@ -667,8 +667,10 @@ export const appRouter = router({
           updated += 1;
         }
       }
-      // Cache per-task fees so routes can compute confirmed revenue
-      await db.cacheWodelyTasks(tasks);
+      // Cache per-task fees so routes can compute confirmed revenue.
+      // Pass the sync window so stale tasks (cancelled/removed in Wodely)
+      // are deleted instead of lingering in our cache.
+      await db.cacheWodelyTasks(tasks, startIso, endIso);
       // Recalculate all routes so blended fees reflect latest sync
       await db.recalculateAllRoutes();
       const lastSyncedAt = await db.setWodelyLastSync({

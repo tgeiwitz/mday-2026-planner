@@ -1050,11 +1050,33 @@ export async function cacheWodelyTasks(
     merchantId: string;
     afterDateTime?: string;
     deliveryFee?: number;
-  }>
+  }>,
+  /** Optional sync window: if provided, the cache rows whose deliveryDate falls
+   * inside [windowStartIso, windowEndIso] (NY-local YYYY-MM-DD) are deleted
+   * before the new tasks are inserted. This makes the cache a true mirror of
+   * what Wodely currently returns and removes stale tasks (cancelled/deleted
+   * upstream). When called without a window, behaves as a pure upsert. */
+  windowStartIso?: string,
+  windowEndIso?: string,
 ) {
   const db = await getDb();
-  if (!db || tasks.length === 0) return;
+  if (!db) return;
   const LAF = "09cc8b76-6b54-4995-b136-a5dea3f0656a";
+
+  // Step 1: if a window was provided, clear stale rows in that window so
+  // tasks Wodely no longer returns are removed from our cache.
+  if (windowStartIso && windowEndIso) {
+    const startDate = windowStartIso.slice(0, 10);
+    const endDate = windowEndIso.slice(0, 10);
+    await db.execute(
+      sql.raw(
+        `DELETE FROM wodely_task_cache WHERE DATE(deliveryDate) >= '${startDate}' AND DATE(deliveryDate) <= '${endDate}'`
+      )
+    );
+  }
+
+  if (tasks.length === 0) return;
+
   const rows: Array<typeof wodelyTaskCache.$inferInsert> = [];
   for (const t of tasks) {
     if (!t.afterDateTime) continue;
@@ -1067,6 +1089,7 @@ export async function cacheWodelyTasks(
       taskFee: String((t.deliveryFee ?? 0).toFixed(2)),
     });
   }
+  if (rows.length === 0) return;
   // Chunked upsert
   const chunk = 500;
   for (let i = 0; i < rows.length; i += chunk) {

@@ -474,3 +474,11 @@ list of bugs.
 - [x] Capacity rollup — deferred-by-design
 - [x] Vitest — deferred-by-design
 - [x] Final checkpoint — v44 (00b42b53) is the go-live build
+
+
+## v46 BUG: Confirmed-tasks-per-day on Dashboard reflect wrong dates
+- [ ] Inspect wodely_task_cache rows: which dates are actually populated, what counts?
+- [ ] Trace how forecast.list aggregates lafConfirmed / bcConfirmed from the cache (timezone? completedAt vs deliverDate?)
+- [ ] Identify the bucket bug
+- [ ] Fix and verify pre-MD weekday rows are low single-digits and M-Day weekend rows are large
+- [ ] Re-deploy and tell user
