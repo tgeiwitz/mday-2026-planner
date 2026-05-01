@@ -251,3 +251,10 @@
 - [x] Backend: `profitability.rollup` query returns days, weeks (Mon–Sun), and totals
 - [x] New Profitability page in sidebar showing summary cards + per-week tables with day rows and week totals
 - [x] Vitest covers shape, margin invariant, and weekStart=Monday (sprint.test.ts — 2 new tests; 9/9 pass)
+
+
+## v29 Data lineage + route creation explainer
+- [x] Audit code: confirmed there is no `routes.create` tRPC endpoint — routes are seeded directly into the routes table at setup time, edited via routes.update, and recalculated whenever stops/driver/status/floors/holiday/bonus change
+- [x] Author DATA_LINEAGE.md (sources + formulas + route creation flow + per-route math + profitability rollup + test invariants + worked example)
+- [x] Profitability page: collapsible "How is this calculated? Where does the data come from?" panel mirrors the doc
+- [x] Tests: 24 passing / 2 legacy skipped
