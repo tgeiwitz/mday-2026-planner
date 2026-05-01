@@ -5,6 +5,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import * as db from "./db";
 import { aggregateByDate, fetchConfirmedOrders, testAuth } from "./wodely";
+import { notifyOwner } from "./_core/notification";
 
 export const appRouter = router({
   system: systemRouter,
@@ -232,10 +233,11 @@ export const appRouter = router({
           driverId: z.number(),
           timeblockId: z.number(),
           assignmentStatus: z.enum(["Signed Up", "Scheduled"]).default("Signed Up"),
+          notes: z.string().max(500).optional(),
         })
       )
       .mutation(async ({ input }) => {
-        await db.assignDriverTimeblock(input);
+        await db.assignDriverTimeblock(input as any);
         return { success: true };
       }),
     remove: publicProcedure
@@ -549,6 +551,68 @@ export const appRouter = router({
           days,
         };
       }),
+    getStats: publicProcedure
+      .input(z.object({ token: z.string(), startDate: z.string() }))
+      .query(async ({ input }) => {
+        const tokenRow = await db.getShareTokenRow(input.token);
+        if (!tokenRow || tokenRow.revokedAt) throw new Error("Invalid or revoked share link");
+        if (!(tokenRow.merchant === "LAF" || tokenRow.merchant === "BC")) {
+          return { stats: [] as any[], hasForecast: false };
+        }
+        const d = new Date(input.startDate + "T00:00:00Z");
+        const dow = d.getUTCDay();
+        const mondayOffset = dow === 0 ? -6 : 1 - dow;
+        const monday = new Date(d);
+        monday.setUTCDate(monday.getUTCDate() + mondayOffset);
+        const sat = new Date(monday);
+        sat.setUTCDate(sat.getUTCDate() + 5);
+        const toIso = (x: Date) => `${x.getUTCFullYear()}-${String(x.getUTCMonth() + 1).padStart(2, "0")}-${String(x.getUTCDate()).padStart(2, "0")}`;
+        const stats = await db.getMerchantShareStats(
+          tokenRow.merchant as "LAF" | "BC",
+          toIso(monday),
+          toIso(sat),
+        );
+        return { stats, hasForecast: true };
+      }),
+    confirmWeek: publicProcedure
+      .input(z.object({ token: z.string(), startDate: z.string() }))
+      .mutation(async ({ input }) => {
+        const tokenRow = await db.getShareTokenRow(input.token);
+        if (!tokenRow || tokenRow.revokedAt) throw new Error("Invalid or revoked share link");
+        if (!(tokenRow.merchant === "LAF" || tokenRow.merchant === "BC")) {
+          throw new Error(`${tokenRow.merchant} uses ad-hoc delivery, no forecast to confirm`);
+        }
+        const today = new Date();
+        const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+        const d = new Date(input.startDate + "T00:00:00Z");
+        const dow = d.getUTCDay();
+        const mondayOffset = dow === 0 ? -6 : 1 - dow;
+        const monday = new Date(d);
+        monday.setUTCDate(monday.getUTCDate() + mondayOffset);
+        const sat = new Date(monday);
+        sat.setUTCDate(sat.getUTCDate() + 5);
+        const toIso = (x: Date) => `${x.getUTCFullYear()}-${String(x.getUTCMonth() + 1).padStart(2, "0")}-${String(x.getUTCDate()).padStart(2, "0")}`;
+        const mondayIso = toIso(monday);
+        const satIso = toIso(sat);
+        if (mondayIso <= todayIso) {
+          throw new Error("Only future weeks can be confirmed");
+        }
+        await db.touchShareToken(tokenRow.id);
+        const result = await db.confirmShareWeek(
+          tokenRow.merchant as "LAF" | "BC",
+          mondayIso,
+          satIso,
+        );
+        try {
+          await notifyOwner({
+            title: `${tokenRow.merchant} confirmed week ${mondayIso}`,
+            content: `${tokenRow.label || tokenRow.merchant} confirmed forecast for ${mondayIso} – ${satIso}. ${result.updated} day(s) updated. Re-edits remain allowed.`,
+          });
+        } catch (err) {
+          console.warn("notifyOwner failed:", err);
+        }
+        return { success: true, updated: result.updated };
+      }),
     setForecast: publicProcedure
       .input(z.object({
         token: z.string(),
@@ -600,6 +664,33 @@ export const appRouter = router({
           tokenRow.label || tokenRow.merchant,
         );
         return { success: true };
+      }),
+  }),
+
+  driverSignup: router({
+    // Public list of timeblocks within sign-up window + drivers (so a driver can pick themselves)
+    timeblocks: publicProcedure.query(() => db.listSignupTimeblocks()),
+    drivers: publicProcedure.query(() => db.listDrivers()),
+    listAssignments: publicProcedure.query(() => db.listDriverTimeblocks()),
+    create: publicProcedure
+      .input(
+        z.object({
+          driverId: z.number(),
+          timeblockId: z.number(),
+          notes: z.string().max(500).optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const result = await db.createDriverSignup(input);
+        try {
+          await notifyOwner({
+            title: `Driver signed up for timeblock #${input.timeblockId}`,
+            content: `Driver #${input.driverId} signed up.${input.notes ? ` Notes: ${input.notes}` : ""}`,
+          });
+        } catch (err) {
+          console.warn("notifyOwner failed:", err);
+        }
+        return result;
       }),
   }),
 

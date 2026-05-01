@@ -1,6 +1,8 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { Flower, TrendingUp, AlertCircle, CheckCircle2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -121,6 +123,36 @@ function CopyBlurbButton({ r }: { r: PlanningRow }) {
     >
       {copied ? "Copied" : "Copy"}
     </button>
+  );
+}
+
+function SyncFromWodelyButton() {
+  const [lastSync, setLastSync] = useState<string | null>(null);
+  const utils = trpc.useUtils();
+  const sync = trpc.wodely.syncConfirmed.useMutation({
+    onSuccess: (res: any) => {
+      setLastSync(new Date().toLocaleString());
+      toast.success(`Synced ${res?.totalTasks ?? 0} tasks across ${res?.syncedDates ?? 0} day(s)`);
+      utils.planning.list.invalidate();
+      utils.forecast.list.invalidate();
+      utils.routes.list.invalidate();
+    },
+    onError: (err: any) => toast.error(`Sync failed: ${err.message}`),
+  });
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <Button
+        onClick={() => sync.mutate()}
+        disabled={sync.isPending}
+        size="sm"
+        className="bg-primary text-primary-foreground"
+      >
+        {sync.isPending ? "Syncing\u2026" : "Sync from Wodely"}
+      </Button>
+      {lastSync && (
+        <span className="text-[11px] text-muted-foreground">Last sync: {lastSync}</span>
+      )}
+    </div>
   );
 }
 
@@ -351,11 +383,16 @@ export default function Home() {
               Mother's Day 2026 · Operations Planning
             </span>
           </div>
-          <h1 className="page-title">Scenario Planner</h1>
-          <p className="page-subtitle max-w-2xl">
-            Daily forecast for the holiday window — April 29 through May 18, 2026. Click any 2026 goal
-            or BC estimate to edit inline; totals and scenarios update automatically.
-          </p>
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <h1 className="page-title">Scenario Planner</h1>
+              <p className="page-subtitle max-w-2xl">
+                Daily forecast for the holiday window — April 29 through May 18, 2026. Click any 2026 goal
+                or BC estimate to edit inline; totals and scenarios update automatically.
+              </p>
+            </div>
+            <SyncFromWodelyButton />
+          </div>
         </div>
       </div>
 
@@ -385,7 +422,7 @@ export default function Home() {
               <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1">Confirmed Orders</div>
               <div className="font-serif text-3xl">{totals.confirmed.toLocaleString()}</div>
               <div className="text-[11px] text-muted-foreground mt-1">
-                Sync in Scenarios to refresh from Wodely
+                Click "Sync from Wodely" to refresh
               </div>
             </CardContent>
           </Card>

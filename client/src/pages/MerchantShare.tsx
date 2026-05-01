@@ -48,6 +48,26 @@ export default function MerchantShare() {
     onError: (e) => toast.error(e.message),
   });
 
+  const { data: statsData } = trpc.merchantShare.getStats.useQuery(
+    { token: token ?? "", startDate: weekStart },
+    { enabled: !!token, retry: false }
+  );
+  const statsByDate = useMemo(() => {
+    const m = new Map<string, { trailing30Avg: number; trailing60Avg: number; lyMDaySameDow: number }>();
+    (statsData?.stats ?? []).forEach((s: any) => m.set(s.date, s));
+    return m;
+  }, [statsData]);
+
+  const utils = trpc.useUtils();
+  const confirmWeek = trpc.merchantShare.confirmWeek.useMutation({
+    onSuccess: (res: any) => {
+      toast.success(`Week confirmed — ${res?.updated ?? 0} day(s) locked in. You can still re-edit if needed.`);
+      utils.merchantShare.view.invalidate();
+      refetch();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   const merchantLabelClass = useMemo(() => {
     switch (data?.merchant) {
       case "LAF": return "bg-rose-50 text-rose-800 border-rose-200";
@@ -153,9 +173,24 @@ export default function MerchantShare() {
           </Card>
         )}
         {data && data.isFutureWeek && data.hasForecast && (
-          <Card className="p-4 border-emerald-300/60 bg-emerald-50/50 text-emerald-900 text-sm">
-            Future week — update your forecast per day. Notes are always editable
-            (e.g., "please deliver before 4pm", "using alternate van").
+          <Card className="p-4 border-emerald-300/60 bg-emerald-50/50 text-emerald-900 text-sm flex items-center justify-between gap-4 flex-wrap">
+            <div>
+              Future week — use the reference columns (30d Avg, 60d Avg, LY M-Day) to set your
+              Forecast per day. When you're ready, click <b>Confirm Week</b> to lock in those
+              forecasts as the budget. You can still re-edit afterward.
+            </div>
+            <Button
+              size="sm"
+              className="bg-emerald-700 hover:bg-emerald-800 text-white"
+              disabled={confirmWeek.isPending}
+              onClick={() => {
+                if (!token) return;
+                if (!confirm(`Confirm forecasts for ${fmt(data.weekStart)} – ${fmt(data.weekEnd)}? Re-edits will still be allowed.`)) return;
+                confirmWeek.mutate({ token, startDate: weekStart });
+              }}
+            >
+              {confirmWeek.isPending ? "Confirming…" : "Confirm Week"}
+            </Button>
           </Card>
         )}
 
@@ -166,6 +201,13 @@ export default function MerchantShare() {
                 <thead className="bg-muted/40">
                   <tr className="text-left">
                     <th className="p-3 font-medium w-[130px]">Day</th>
+                    {data.hasForecast && (
+                      <>
+                        <th className="p-3 font-medium text-right" title="Avg of last 4-5 same-DOW counts (last 30 days)">30d Avg</th>
+                        <th className="p-3 font-medium text-right" title="Avg of last 8-9 same-DOW counts (last 60 days)">60d Avg</th>
+                        <th className="p-3 font-medium text-right" title="Same DOW from M-Day 2025 week (May 5-10, 2025)">LY M-Day</th>
+                      </>
+                    )}
                     {data.hasForecast && <th className="p-3 font-medium text-right">Budget</th>}
                     <th className="p-3 font-medium text-right">
                       {data.hasForecast ? "Forecast" : "Planned"}
@@ -180,12 +222,20 @@ export default function MerchantShare() {
                   {data.days.map((d: any) => {
                     const forecastValue = forecastEdits[d.date] ?? String(d.forecast);
                     const noteValue = noteEdits[d.date] ?? d.note ?? "";
+                    const stat = statsByDate.get(d.date);
                     return (
                       <tr key={d.date} className={d.isPast ? "bg-muted/20 text-muted-foreground" : ""}>
                         <td className="p-3">
                           <div className="font-medium">{d.dayName}</div>
                           <div className="text-xs text-muted-foreground">{fmt(d.date)}</div>
                         </td>
+                        {data.hasForecast && (
+                          <>
+                            <td className="p-3 text-right font-mono text-muted-foreground">{stat?.trailing30Avg ?? 0}</td>
+                            <td className="p-3 text-right font-mono text-muted-foreground">{stat?.trailing60Avg ?? 0}</td>
+                            <td className="p-3 text-right font-mono text-muted-foreground">{stat?.lyMDaySameDow ?? 0}</td>
+                          </>
+                        )}
                         {data.hasForecast && (
                           <td className="p-3 text-right font-mono">{d.budget}</td>
                         )}

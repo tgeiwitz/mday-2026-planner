@@ -1161,3 +1161,231 @@ export async function listForecastByDateRange(startIso: string, endIso: string) 
     )
     .orderBy(asc(dailyForecast.forecastDate));
 }
+
+
+// ---------- Merchant Share Calculator ----------
+// Returns per-day reference stats for a Mon-Sat week:
+// - trailing30Avg: avg same-DOW count across the last 30 days before today
+// - trailing60Avg: avg same-DOW count across the last 60 days before today
+// - lyMDaySameDow: count from M-Day 2025 week (May 5-10, 2025) for matching DOW
+//
+// Sources: zoneTaskHistory2025 for dates <= 2025-12-31; wodelyTaskCache for 2026 dates.
+// Aggregates to per-merchant daily totals (sums across zones).
+export type ShareStats = {
+  date: string;
+  dow: number;
+  trailing30Avg: number;
+  trailing60Avg: number;
+  lyMDaySameDow: number;
+};
+
+function isoToUTCDate(iso: string): Date {
+  return new Date(iso + "T00:00:00Z");
+}
+function utcDateToIso(d: Date): string {
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+export async function getMerchantShareStats(
+  merchant: "LAF" | "BC",
+  weekStartIso: string,
+  weekEndIso: string,
+): Promise<ShareStats[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  // Today (UTC) — the trailing window ends "yesterday" so today is excluded.
+  const today = new Date();
+  const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  const todayUtc = isoToUTCDate(todayIso);
+
+  // 60-day trailing window: [today - 60, today - 1]
+  const win60Start = new Date(todayUtc);
+  win60Start.setUTCDate(win60Start.getUTCDate() - 60);
+  const win60End = new Date(todayUtc);
+  win60End.setUTCDate(win60End.getUTCDate() - 1);
+  const win60StartIso = utcDateToIso(win60Start);
+  const win60EndIso = utcDateToIso(win60End);
+
+  // Pull historical (2025) rows in window
+  const histRows = await db
+    .select()
+    .from(zoneTaskHistory2025)
+    .where(
+      _sql`${zoneTaskHistory2025.taskDate} >= ${win60StartIso} AND ${zoneTaskHistory2025.taskDate} <= ${win60EndIso} AND ${zoneTaskHistory2025.merchant} = ${merchant}`,
+    );
+  // Pull 2026 rows in window
+  const wodelyRows = await db
+    .select()
+    .from(wodelyTaskCache)
+    .where(
+      _sql`${wodelyTaskCache.deliveryDate} >= ${win60StartIso} AND ${wodelyTaskCache.deliveryDate} <= ${win60EndIso} AND ${wodelyTaskCache.merchant} = ${merchant}`,
+    );
+
+  // Build daily totals map: iso -> count
+  const dailyTotals = new Map<string, number>();
+  for (const r of histRows) {
+    const iso = (r.taskDate instanceof Date)
+      ? utcDateToIso(r.taskDate)
+      : String(r.taskDate).slice(0, 10);
+    dailyTotals.set(iso, (dailyTotals.get(iso) || 0) + (r.taskCount || 0));
+  }
+  for (const r of wodelyRows) {
+    const iso = (r.deliveryDate instanceof Date)
+      ? utcDateToIso(r.deliveryDate)
+      : String(r.deliveryDate).slice(0, 10);
+    dailyTotals.set(iso, (dailyTotals.get(iso) || 0) + 1); // each wodely row = 1 task
+  }
+
+  // For LY M-Day reference: M-Day 2025 was Sunday May 11, 2025.
+  // Use the week May 5 (Mon) - May 10 (Sat) 2025 as the reference week.
+  const lyWeekStart = "2025-05-05";
+  const lyWeekEnd = "2025-05-10";
+  const lyRows = await db
+    .select()
+    .from(zoneTaskHistory2025)
+    .where(
+      _sql`${zoneTaskHistory2025.taskDate} >= ${lyWeekStart} AND ${zoneTaskHistory2025.taskDate} <= ${lyWeekEnd} AND ${zoneTaskHistory2025.merchant} = ${merchant}`,
+    );
+  const lyByDow = new Map<number, number>(); // dow (1=Mon..6=Sat) -> count
+  for (const r of lyRows) {
+    const d = (r.taskDate instanceof Date) ? r.taskDate : isoToUTCDate(String(r.taskDate).slice(0, 10));
+    const dow = d.getUTCDay(); // 0 Sun .. 6 Sat
+    lyByDow.set(dow, (lyByDow.get(dow) || 0) + (r.taskCount || 0));
+  }
+
+  // Iterate Mon-Sat for the requested week
+  const result: ShareStats[] = [];
+  const monday = isoToUTCDate(weekStartIso);
+  for (let i = 0; i < 6; i++) {
+    const cur = new Date(monday);
+    cur.setUTCDate(cur.getUTCDate() + i);
+    const dayDow = cur.getUTCDay(); // for Mon..Sat -> 1..6
+
+    // Trailing 30/60 same-DOW averages: scan the trailing window for matching DOW dates
+    let count30 = 0, n30 = 0;
+    let count60 = 0, n60 = 0;
+    const cursor = new Date(win60Start);
+    while (cursor <= win60End) {
+      if (cursor.getUTCDay() === dayDow) {
+        const iso = utcDateToIso(cursor);
+        const v = dailyTotals.get(iso) || 0;
+        count60 += v;
+        n60 += 1;
+        // 30-day window: last 30 days before today
+        const daysFromToday = Math.round((todayUtc.getTime() - cursor.getTime()) / 86400000);
+        if (daysFromToday >= 1 && daysFromToday <= 30) {
+          count30 += v;
+          n30 += 1;
+        }
+      }
+      cursor.setUTCDate(cursor.getUTCDate() + 1);
+    }
+
+    result.push({
+      date: utcDateToIso(cur),
+      dow: dayDow,
+      trailing30Avg: n30 > 0 ? Math.round(count30 / n30) : 0,
+      trailing60Avg: n60 > 0 ? Math.round(count60 / n60) : 0,
+      lyMDaySameDow: lyByDow.get(dayDow) || 0,
+    });
+  }
+
+  return result;
+}
+
+// Confirm a week of forecasts: copy lafReforecast (or bcReforecast) into laf2026Goal (or bc2026Goal)
+// for every existing daily_forecast row in the Mon-Sat range.
+export async function confirmShareWeek(
+  merchant: "LAF" | "BC",
+  weekStartIso: string,
+  weekEndIso: string,
+) {
+  const db = await getDb();
+  if (!db) return { updated: 0 };
+  const rows = await listForecastByDateRange(weekStartIso, weekEndIso);
+  let updated = 0;
+  for (const row of rows) {
+    const patch: any = {};
+    if (merchant === "LAF") {
+      const target = row.lafReforecast ?? row.laf2026Goal ?? 0;
+      patch.laf2026Goal = target;
+    } else {
+      const target = row.bcReforecast ?? row.bc2026Goal ?? 0;
+      patch.bc2026Goal = target;
+    }
+    await db.update(dailyForecast).set(patch).where(eq(dailyForecast.id, row.id));
+    updated += 1;
+  }
+  return { updated };
+}
+
+// ---------- Driver Sign-Up (one-way, Week 1 only) ----------
+// Week 1 is defined as the M-Day week itself: Sun May 3 - Sat May 9, 2026 (and the Mon-Fri lead-in).
+// Configurable below; sign-ups outside the window are rejected.
+export const DRIVER_SIGNUP_WEEK_START = "2026-04-27"; // Mon
+export const DRIVER_SIGNUP_WEEK_END = "2026-05-09"; // Sat (covers week 1 + immediate lead-in)
+
+export async function listSignupTimeblocks() {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(timeblocks)
+    .where(
+      _sql`${timeblocks.blockDate} >= ${DRIVER_SIGNUP_WEEK_START} AND ${timeblocks.blockDate} <= ${DRIVER_SIGNUP_WEEK_END}`,
+    )
+    .orderBy(asc(timeblocks.blockDate), asc(timeblocks.id));
+}
+
+export async function listExistingSignups(driverId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(driverTimeblocks)
+    .where(eq(driverTimeblocks.driverId, driverId));
+}
+
+export async function createDriverSignup(input: {
+  driverId: number;
+  timeblockId: number;
+  notes?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("db unavailable");
+  // Validate timeblock is within the sign-up window
+  const tbRows = await db
+    .select()
+    .from(timeblocks)
+    .where(eq(timeblocks.id, input.timeblockId))
+    .limit(1);
+  if (tbRows.length === 0) throw new Error("Timeblock not found");
+  const tbIso = (tbRows[0].blockDate instanceof Date)
+    ? utcDateToIso(tbRows[0].blockDate as any)
+    : String(tbRows[0].blockDate).slice(0, 10);
+  if (tbIso < DRIVER_SIGNUP_WEEK_START || tbIso > DRIVER_SIGNUP_WEEK_END) {
+    throw new Error("Sign-ups are only open for the M-Day week");
+  }
+  // Prevent duplicate sign-up
+  const existing = await db
+    .select()
+    .from(driverTimeblocks)
+    .where(
+      and(
+        eq(driverTimeblocks.driverId, input.driverId),
+        eq(driverTimeblocks.timeblockId, input.timeblockId),
+      ),
+    )
+    .limit(1);
+  if (existing.length > 0) {
+    throw new Error("You're already signed up for this block");
+  }
+  await db.insert(driverTimeblocks).values({
+    driverId: input.driverId,
+    timeblockId: input.timeblockId,
+    assignmentStatus: "Signed Up",
+    notes: input.notes ?? null,
+  } as any);
+  return { success: true };
+}

@@ -180,8 +180,43 @@ export default function Settings() {
         </div>
 
         <MerchantShareAdmin />
+        <DriverSignupLinkCard />
       </div>
     </div>
+  );
+}
+
+function DriverSignupLinkCard() {
+  const url = `${typeof window !== "undefined" ? window.location.origin : ""}/signup`;
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("Driver sign-up link copied");
+    } catch {
+      toast.error("Copy failed");
+    }
+  };
+  return (
+    <Card className="border-border/60">
+      <CardContent className="pt-6 space-y-3">
+        <div>
+          <h3 className="font-serif text-lg mb-1">Driver Sign-Up Link</h3>
+          <p className="text-xs text-muted-foreground">
+            Public, one-way sign-up form for drivers (M-Day week only). Drivers pick their
+            name, select timeblocks, and add notes. They cannot cancel — dispatch handles cancels.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <code className="text-xs flex-1 truncate bg-muted/40 px-3 py-2 rounded-md">{url}</code>
+          <Button variant="outline" size="sm" onClick={copy}>
+            <Copy className="h-3 w-3 mr-1" /> Copy
+          </Button>
+          <Button asChild size="sm" variant="outline">
+            <a href={url} target="_blank" rel="noreferrer">Open</a>
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

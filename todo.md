@@ -188,3 +188,41 @@
 - [x] Wipe all seeded routes + timeblocks + routeZones + driverTimeblocks (seed data caused 4-routes-today bug)
 - [ ] Route generator default: bookingType=Flex (no auto LAF/BC split)
 - [ ] Drop "wave" from UI everywhere (column stays in DB for back-compat)
+
+
+## v20 Merchant Share Calculator
+- [ ] Backend: trailing 30/60-day same-DOW averages per merchant (LAF, BC) from zone_task_history_2025 + wodely_task_cache
+- [ ] Backend: M-Day 2025 same-DOW lookup (Mon May 5 – Sat May 10, 2025)
+- [ ] Public Merchant Share page rebuild as Mon–Sat calculator (Trailing 30 | Trailing 60 | LY M-Day | Target | Notes) with Confirm Week button (re-editable)
+- [ ] confirmWeek mutation copies forecast → 2026 Goal for the 6 days; allows re-confirm in same week
+
+## v21 Routes Page Visibility
+- [ ] Inline Zones column on Routes page (forecast list + actual when completed)
+- [ ] Per-route calc breakdown popover: travel mins, pickup dwell, route duration, driver pay components, all clickable to source settings
+
+
+## v22 Capacity Truth (Wodely tasks drive routes-needed)
+- [ ] Confirmed Wodely tasks (assigned + unassigned) count toward day's required capacity
+- [ ] Routes-needed per day per zone = ceil(tasks ÷ stops/route) using zone weighting
+- [ ] Driver-shortfall signal on Dashboard ("Need N more drivers")
+- [ ] Unassigned tasks visible per day on Dashboard + Routes (not hidden)
+
+## v23 Wodely Routes Sync (Wodely = source of truth)
+- [ ] wodely_routes_cache table (routeId, routeName, scheduledStart, driverName, status, lastSeenAt, removedAt)
+- [ ] Add wodelyRouteId on wodely_task_cache + on app routes
+- [ ] Sync pulls /v2/routes for window + uses task.routeId for assignment
+- [ ] Task move between routes auto-reflects on next sync
+- [ ] App routes linked to a Wodely route become read-only (synced fields disabled)
+
+
+## v24 Labeling
+- [ ] Replace "Need N more drivers" with "Need N more routes" everywhere; keep driver-shortfall as a secondary signal under route shortfall
+
+
+## v25 One-Hour M-Day Sprint (1, 3, 4)
+- [x] (1) Manual `Sync from Wodely` button on Dashboard header (auto-cron deferred — needs a deploy)
+- [x] (3) Merchant Share calculator columns: 30d Avg, 60d Avg, LY M-Day same-DOW, plus Confirm Week button (copies forecast→2026Goal, re-edit allowed; future weeks only)
+- [x] (4) Driver one-way sign-up form at /signup with notes (M-Day week only, sign-up only, no cancel)
+- [x] Backfill missing wodely_task_cache route columns (production was missing routePlanId/routeSortId/routeName/driverName/taskStatusId)
+- [x] Vitest coverage for new endpoints (server/sprint.test.ts — 6 tests)
+- [x] Single checkpoint at end

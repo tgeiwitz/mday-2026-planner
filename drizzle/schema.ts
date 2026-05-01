@@ -128,6 +128,7 @@ export const driverTimeblocks = mysqlTable("driver_timeblocks", {
   driverId: int("driverId").notNull(),
   timeblockId: int("timeblockId").notNull(),
   assignmentStatus: mysqlEnum("assignmentStatus", ["Signed Up", "Scheduled"]).notNull().default("Signed Up"),
+  notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
@@ -276,12 +277,42 @@ export const wodelyTaskCache = mysqlTable("wodely_task_cache", {
   deliveryDate: date("deliveryDate").notNull(),
   zoneId: int("zoneId"),
   taskFee: decimal("taskFee", { precision: 8, scale: 2 }).notNull().default("0"),
+  // Route assignment from Wodely (source of truth)
+  routePlanId: int("routePlanId"),
+  routeSortId: int("routeSortId"),
+  routeName: varchar("routeName", { length: 128 }),
+  driverName: varchar("driverName", { length: 128 }),
+  taskStatusId: int("taskStatusId"),
   raw: text("raw"),
   syncedAt: timestamp("syncedAt").defaultNow().notNull(),
 });
 
 export type WodelyTaskCache = typeof wodelyTaskCache.$inferSelect;
 export type InsertWodelyTaskCache = typeof wodelyTaskCache.$inferInsert;
+
+// Wodely Routes Cache: route-level metadata pulled from /v2/routes/search
+export const wodelyRoutesCache = mysqlTable("wodely_routes_cache", {
+  id: int("id").autoincrement().primaryKey(),
+  wodelyRouteId: int("wodelyRouteId").notNull().unique(),
+  routeName: varchar("routeName", { length: 128 }),
+  statusId: varchar("statusId", { length: 32 }),
+  startTime: timestamp("startTime"),
+  endTime: timestamp("endTime"),
+  actualStartTime: timestamp("actualStartTime"),
+  actualEndTime: timestamp("actualEndTime"),
+  driverUserId: varchar("driverUserId", { length: 64 }),
+  driverFullName: varchar("driverFullName", { length: 128 }),
+  startAddress: varchar("startAddress", { length: 255 }),
+  endAddress: varchar("endAddress", { length: 255 }),
+  distance: int("distance"),
+  duration: int("duration"),
+  routeDate: date("routeDate").notNull(),
+  lastSeenAt: timestamp("lastSeenAt").defaultNow().notNull(),
+  removedAt: timestamp("removedAt"),
+});
+
+export type WodelyRouteCache = typeof wodelyRoutesCache.$inferSelect;
+export type InsertWodelyRouteCache = typeof wodelyRoutesCache.$inferInsert;
 
 
 // Per-zone per-date per-merchant task counts seeded from 2025 Supabase data.

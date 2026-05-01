@@ -14,6 +14,7 @@ import Scenarios from "./pages/Scenarios";
 import Settings from "./pages/Settings";
 import Snapshots from "./pages/Snapshots";
 import MerchantShare from "./pages/MerchantShare";
+import DriverSignup from "./pages/DriverSignup";
 
 function DashboardRouter() {
   return (
@@ -34,7 +35,7 @@ function DashboardRouter() {
 
 function App() {
   const [location] = useLocation();
-  const isPublic = location.startsWith("/m/");
+  const isPublic = location.startsWith("/m/") || location.startsWith("/signup");
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">
@@ -43,6 +44,7 @@ function App() {
           {isPublic ? (
             <Switch>
               <Route path="/m/:token" component={MerchantShare} />
+              <Route path="/signup" component={DriverSignup} />
             </Switch>
           ) : (
             <DashboardLayout>
