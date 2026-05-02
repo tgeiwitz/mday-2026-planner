@@ -212,43 +212,50 @@ export default function Routes() {
                 <div className="space-y-3">
                   <div>
                     <label className="text-xs uppercase tracking-wider text-muted-foreground">Timeblock</label>
-                    <InlineEnumInput
+                    <select
                       value={newRoute.timeblockId}
-                      options={timeblocks.map((t) => `${fmtDate(toISODate(t.blockDate))} · ${t.label} · ${t.merchant}`)}
-                      labelMap={Object.fromEntries(timeblocks.map((t) => [String(t.id), `${fmtDate(toISODate(t.blockDate))} · ${t.label} · ${t.merchant}`]))}
-                      placeholder="Type to find a timeblock…"
-                      onCommit={(v) => {
-                        const match = timeblocks.find((t) => `${fmtDate(toISODate(t.blockDate))} · ${t.label} · ${t.merchant}` === v);
-                        if (match) setNewRoute({ ...newRoute, timeblockId: String(match.id) });
-                      }}
-                      className="h-9 w-full"
-                      ariaLabel="Timeblock"
-                    />
+                      onChange={(e) => setNewRoute({ ...newRoute, timeblockId: e.target.value })}
+                      aria-label="Timeblock"
+                      className="h-9 w-full border border-input bg-background rounded-md px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                    >
+                      <option value="">Pick a timeblock…</option>
+                      {timeblocks
+                        .slice()
+                        .sort((a, b) => String(a.blockDate).localeCompare(String(b.blockDate)))
+                        .map((t) => (
+                          <option key={t.id} value={String(t.id)}>
+                            {fmtDate(toISODate(t.blockDate))} · {t.label} · {t.merchant}
+                          </option>
+                        ))}
+                    </select>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="text-xs uppercase tracking-wider text-muted-foreground">Merchant</label>
-                      <InlineEnumInput
+                      <select
                         value={newRoute.merchant}
-                        options={["LAF", "BC", "SMC", "SMR"]}
-                        onCommit={(v) => {
-                          if (["LAF", "BC", "SMC", "SMR"].includes(v)) setNewRoute({ ...newRoute, merchant: v as any });
-                        }}
-                        className="h-9 w-full uppercase"
-                        ariaLabel="Merchant"
-                      />
+                        onChange={(e) => setNewRoute({ ...newRoute, merchant: e.target.value as any })}
+                        aria-label="Merchant"
+                        className="h-9 w-full border border-input bg-background rounded-md px-2 text-sm uppercase outline-none focus:ring-2 focus:ring-ring"
+                      >
+                        <option value="LAF">LAF</option>
+                        <option value="BC">BC</option>
+                        <option value="SMC">SMC</option>
+                        <option value="SMR">SMR</option>
+                      </select>
                     </div>
                     <div>
                       <label className="text-xs uppercase tracking-wider text-muted-foreground">Booking</label>
-                      <InlineEnumInput
+                      <select
                         value={newRoute.bookingType}
-                        options={["Direct", "Flex"]}
-                        onCommit={(v) => {
-                          if (v === "Direct" || v === "Flex") setNewRoute({ ...newRoute, bookingType: v });
-                        }}
-                        className="h-9 w-full"
-                        ariaLabel="Booking type"
-                      />
+                        onChange={(e) => setNewRoute({ ...newRoute, bookingType: e.target.value as any })}
+                        aria-label="Booking type"
+                        className="h-9 w-full border border-input bg-background rounded-md px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                      >
+                        <option value="Direct">Direct</option>
+                        <option value="Flex">Flex (mixed merchants)</option>
+                      </select>
+                      <p className="text-[11px] text-muted-foreground mt-1">For Flex, pick the primary pickup merchant above.</p>
                     </div>
                   </div>
                   <div>

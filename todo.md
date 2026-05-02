@@ -490,3 +490,10 @@ list of bugs.
 - [x] Reused existing dialog (already had full field set with sensible defaults); refresh + toast wired via existing createBlock mutation
 - [x] End-to-end smoke test passed: POST custom early-pickup block (LAF Direct 08:30 pickup, 07:00–12:00 availability) → returned id, list reflected all fields exactly, delete succeeded
 - [x] Save checkpoint
+
+
+## v48 BUG: cannot create route for today's timeblock
+- [ ] Reproduce the create-route failure on today's timeblock; capture error
+- [ ] Fix root cause
+- [ ] Verify create succeeds end-to-end
+- [ ] Save checkpoint
