@@ -224,6 +224,9 @@ export default function Timeblocks() {
               </p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
+              <Button onClick={() => openCreate()} className="bg-primary text-primary-foreground">
+                <Plus className="h-4 w-4 mr-1.5" /> New Timeblock
+              </Button>
               <AutoCreateWeekButton onCreate={(weekOf) => autoCreateWeek.mutate({ weekOf })} pending={autoCreateWeek.isPending} />
             </div>
           </div>

@@ -482,3 +482,11 @@ list of bugs.
 - [ ] Identify the bucket bug
 - [ ] Fix and verify pre-MD weekday rows are low single-digits and M-Day weekend rows are large
 - [ ] Re-deploy and tell user
+
+
+## v47 Manual New Timeblock button (custom early-pickup blocks for holidays) [SHIPPED]
+- [x] Verified timeblocks.create router accepts date, merchant, bookingType, lafPickupTime, bcPickupTime, label, availability window, target routes, dwell, mileage rate, pay floors, bonus, notes
+- [x] Added primary "New Timeblock" button on Timeblocks page header next to Auto-Create Week
+- [x] Reused existing dialog (already had full field set with sensible defaults); refresh + toast wired via existing createBlock mutation
+- [x] End-to-end smoke test passed: POST custom early-pickup block (LAF Direct 08:30 pickup, 07:00–12:00 availability) → returned id, list reflected all fields exactly, delete succeeded
+- [x] Save checkpoint
