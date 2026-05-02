@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
-import { Flower, TrendingUp, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Flower, TrendingUp, AlertCircle, CheckCircle2, RefreshCw, Loader2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { fmtDateShort, dayName, toISODate } from "@/lib/date";
 import { DataIntegrityTile } from "@/components/DataIntegrityTile";
@@ -202,27 +202,111 @@ function LastSyncBadge() {
 
 function SyncFromWodelyButton() {
   const utils = trpc.useUtils();
+  const [phase, setPhase] = useState<string>("");
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+  const [lastResult, setLastResult] = useState<{ totalTasks: number; syncedDates: number; elapsedMs: number } | null>(null);
+
   const sync = trpc.wodely.syncConfirmed.useMutation({
-    onSuccess: (res: any) => {
-      toast.success(`Synced ${res?.totalTasks ?? 0} tasks across ${res?.syncedDates ?? 0} day(s)`);
-      utils.planning.list.invalidate();
-      utils.forecast.list.invalidate();
-      utils.routes.list.invalidate();
-      utils.wodely.lastSync.invalidate();
+    onMutate: () => {
+      setStartedAt(Date.now());
+      setLastResult(null);
+      setPhase("Connecting to Wodely");
     },
-    onError: (err: any) => toast.error(`Sync failed: ${err.message}`),
+    onSuccess: async (res: any) => {
+      const t = res?.totalTasks ?? 0;
+      const d = res?.syncedDates ?? 0;
+      const ms = startedAt ? Date.now() - startedAt : 0;
+      setPhase("Refreshing dashboard");
+      await Promise.all([
+        utils.planning.list.invalidate(),
+        utils.forecast.list.invalidate(),
+        utils.routes.list.invalidate(),
+        utils.wodely.lastSync.invalidate(),
+      ]);
+      setPhase("");
+      setStartedAt(null);
+      setLastResult({ totalTasks: t, syncedDates: d, elapsedMs: ms });
+      toast.success(`Synced ${t} tasks across ${d} day(s) in ${(ms / 1000).toFixed(1)}s`);
+      // Auto-clear the result chip after 8s
+      window.setTimeout(() => setLastResult(null), 8000);
+    },
+    onError: (err: any) => {
+      setPhase("");
+      setStartedAt(null);
+      toast.error(`Sync failed: ${err.message}`);
+    },
   });
+
+  // Tick elapsed time while syncing so the user sees motion
+  useEffect(() => {
+    if (!startedAt) return;
+    setElapsed(0);
+    const id = window.setInterval(() => {
+      setElapsed(Date.now() - startedAt);
+    }, 100);
+    return () => window.clearInterval(id);
+  }, [startedAt]);
+
+  // Walk through the phase labels at fixed intervals so the user sees stepwise progress
+  useEffect(() => {
+    if (!sync.isPending || !startedAt) return;
+    const labels = [
+      { at: 0, label: "Connecting to Wodely" },
+      { at: 1500, label: "Fetching tasks" },
+      { at: 4000, label: "Caching results" },
+      { at: 7000, label: "Recalculating routes" },
+    ];
+    const timers: number[] = [];
+    labels.forEach((p) => {
+      timers.push(window.setTimeout(() => setPhase(p.label), p.at));
+    });
+    return () => {
+      timers.forEach((t) => window.clearTimeout(t));
+    };
+  }, [sync.isPending, startedAt]);
+
+  const isPending = sync.isPending;
+
   return (
-    <div className="flex flex-col items-end gap-1.5">
+    <div className="flex flex-col items-end gap-1.5 min-w-[220px]">
       <Button
         onClick={() => sync.mutate()}
-        disabled={sync.isPending}
+        disabled={isPending}
         size="sm"
-        className="bg-primary text-primary-foreground"
+        className="bg-primary text-primary-foreground inline-flex items-center gap-2"
       >
-        {sync.isPending ? "Syncing…" : "Sync from Wodely"}
+        {isPending ? (
+          <>
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Syncing…
+          </>
+        ) : (
+          <>
+            <RefreshCw className="h-3.5 w-3.5" />
+            Sync from Wodely
+          </>
+        )}
       </Button>
-      <LastSyncBadge />
+
+      {/* Indeterminate progress bar + phase label while pending */}
+      {isPending ? (
+        <div className="w-full max-w-[260px] flex flex-col items-end gap-1">
+          <div className="text-[11px] text-muted-foreground">
+            {phase || "Working…"} · {(elapsed / 1000).toFixed(1)}s
+          </div>
+          <div className="w-full h-1.5 rounded-full bg-muted overflow-hidden">
+            <div className="h-full w-1/3 rounded-full bg-primary animate-progress-stripe" />
+          </div>
+        </div>
+      ) : lastResult ? (
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 text-emerald-900 px-2 py-0.5 text-[11px] font-medium">
+          <CheckCircle2 className="h-3 w-3" />
+          Synced {lastResult.totalTasks} tasks · {lastResult.syncedDates} day{lastResult.syncedDates === 1 ? "" : "s"} · {(lastResult.elapsedMs / 1000).toFixed(1)}s
+        </span>
+      ) : (
+        <LastSyncBadge />
+      )}
     </div>
   );
 }
