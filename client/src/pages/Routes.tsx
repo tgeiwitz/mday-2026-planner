@@ -52,6 +52,7 @@ export default function Routes() {
   const { data: drivers = [] } = trpc.drivers.list.useQuery();
   const { data: routeZones = [], refetch: refetchZones } = trpc.routes.listZones.useQuery();
   const { data: allZones = [] } = trpc.zones.list.useQuery();
+  const { data: wodelySummary } = trpc.routes.wodelyConfirmedSummary.useQuery();
   const update = trpc.routes.update.useMutation({
     onSuccess: () => {
       refetch();
@@ -377,6 +378,62 @@ export default function Routes() {
       </div>
 
       <div className="container py-8">
+        {wodelySummary && Object.keys(wodelySummary.byDateMerchant).length > 0 && (
+          <Card className="border-border/60 overflow-hidden mb-4">
+            <div className="px-5 py-4">
+              <div className="flex items-baseline justify-between mb-2">
+                <div>
+                  <div className="text-xs uppercase tracking-wider text-muted-foreground">Wodely Confirmed (live, by day · merchant)</div>
+                  <div className="text-[11px] text-muted-foreground">Open Wodely tasks (excludes Completed). “withRoute” = already on a Wodely route plan; “withoutRoute” = needs route assignment in Wodely.</div>
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="text-xs w-full">
+                  <thead className="text-muted-foreground">
+                    <tr className="text-left">
+                      <th className="py-1 pr-4">Date</th>
+                      <th className="py-1 pr-4">Merchant</th>
+                      <th className="py-1 pr-4 text-right">Total</th>
+                      <th className="py-1 pr-4 text-right">withRoute</th>
+                      <th className="py-1 pr-4 text-right">withoutRoute</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(wodelySummary.byDateMerchant)
+                      .sort(([a], [b]) => a.localeCompare(b))
+                      .filter(([k]) => k.split("|")[0] >= todayIso)
+                      .map(([k, v]) => {
+                        const [date, merchant] = k.split("|");
+                        return (
+                          <tr key={k} className="border-t border-border/40">
+                            <td className="py-1 pr-4 whitespace-nowrap">{fmtDate(date)}</td>
+                            <td className="py-1 pr-4"><span className={merchantBadgeClass(merchant)}>{merchant}</span></td>
+                            <td className="py-1 pr-4 text-right font-mono font-medium">{v.total}</td>
+                            <td className="py-1 pr-4 text-right font-mono text-emerald-700">{v.withRoute}</td>
+                            <td className="py-1 pr-4 text-right font-mono text-amber-700">{v.withoutRoute}</td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+              {Object.keys(wodelySummary.byRouteName).length > 0 && (
+                <div className="mt-3 pt-3 border-t border-border/40">
+                  <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Wodely route names with stops</div>
+                  <div className="flex flex-wrap gap-2 text-xs">
+                    {Object.entries(wodelySummary.byRouteName)
+                      .sort((a, b) => b[1] - a[1])
+                      .map(([name, cnt]) => (
+                        <span key={name} className="font-mono px-2 py-0.5 rounded border border-border/60 bg-muted/30">
+                          {name} · <span className="font-semibold">{cnt}</span>
+                        </span>
+                      ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </Card>
+        )}
         <Card className="border-border/60 overflow-hidden">
           <div className="table-scroll">
             <table className="elegant-table">
@@ -389,6 +446,7 @@ export default function Routes() {
                   <th>Merchant</th>
                   <th>Driver</th>
                   <th className="text-right">Stops</th>
+                  <th className="text-right" title="Open Wodely tasks (taskStatusId != 50) whose routeName matches this route's code (case-insensitive). Until dispatch builds Wodely route plans, this stays at —.">Wodely Conf</th>
                   <th className="text-right">Dur</th>
                   <th className="text-right">Miles</th>
                   <th className="text-right">Fee</th>
@@ -408,7 +466,7 @@ export default function Routes() {
               <tbody>
                 {sorted.length === 0 && (
                   <tr>
-                    <td colSpan={21} className="text-center text-muted-foreground py-10">
+                    <td colSpan={22} className="text-center text-muted-foreground py-10">
                       No routes match these filters.
                     </td>
                   </tr>
@@ -465,22 +523,24 @@ export default function Routes() {
                           )}
                         </td>
                         <td>
-                          <InlineEnumInput
+                          <select
+                            aria-label="Driver"
+                            className="h-8 w-[150px] rounded-md border border-input bg-background px-2 text-xs hover:border-ring focus:border-ring focus:outline-none"
                             value={r.driverId ? String(r.driverId) : ""}
-                            options={drivers.map((d) => d.name)}
-                            labelMap={Object.fromEntries(drivers.map((d) => [String(d.id), d.name]))}
-                            placeholder="— Unassigned —"
-                            onCommit={(v) => {
-                              if (!v.trim()) {
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              if (!v) {
                                 update.mutate({ id: r.id, driverId: null });
-                                return;
+                              } else {
+                                update.mutate({ id: r.id, driverId: Number(v) });
                               }
-                              const match = drivers.find((d) => d.name.toLowerCase() === v.trim().toLowerCase());
-                              if (match) update.mutate({ id: r.id, driverId: match.id });
                             }}
-                            className="h-8 w-[150px]"
-                            ariaLabel="Driver"
-                          />
+                          >
+                            <option value="">— Unassigned —</option>
+                            {drivers.map((d) => (
+                              <option key={d.id} value={String(d.id)}>{d.name}</option>
+                            ))}
+                          </select>
                         </td>
                         <td className="num-cell">
                           <Input
@@ -492,6 +552,14 @@ export default function Routes() {
                               if (!Number.isNaN(n) && n !== r.stops) update.mutate({ id: r.id, stops: n });
                             }}
                           />
+                        </td>
+                        <td className="num-cell text-xs">
+                          {(() => {
+                            const cnt = wodelySummary?.byRouteName?.[(r.routeCode ?? "").toLowerCase()] ?? 0;
+                            if (cnt === 0) return <span className="text-muted-foreground">—</span>;
+                            const tone = cnt === r.stops ? "text-emerald-700" : cnt > r.stops ? "text-amber-700" : "text-foreground";
+                            return <span className={`font-medium ${tone}`} title="Open Wodely tasks linked to this route via routeName.">{cnt}</span>;
+                          })()}
                         </td>
                         <td className="num-cell text-xs">{r.estDuration}m</td>
                         <td className="num-cell text-xs">{Number(r.estMileage).toFixed(1)}</td>
@@ -561,21 +629,25 @@ export default function Routes() {
                           })()}
                         </td>
                         <td>
-                          <InlineEnumInput
+                          <select
+                            aria-label="Status"
+                            className="h-7 w-[110px] rounded-md border border-input bg-background px-2 text-xs hover:border-ring focus:border-ring focus:outline-none"
                             value={r.status}
-                            options={STATUSES}
-                            onCommit={(v) => {
+                            onChange={(e) => {
+                              const v = e.target.value;
                               if (!STATUSES.includes(v)) return;
                               update.mutate({ id: r.id, status: v as any });
                             }}
-                            className="h-7 w-[110px]"
-                            ariaLabel="Status"
-                          />
+                          >
+                            {STATUSES.map((s) => (
+                              <option key={s} value={s}>{s}</option>
+                            ))}
+                          </select>
                         </td>
                       </tr>
                       {isExpanded && (
                         <tr>
-                          <td colSpan={19} className="!p-0 bg-muted/20">
+                          <td colSpan={22} className="!p-0 bg-muted/20">
                             <div className="px-12 py-4">
                               <div className="flex items-center justify-between mb-3">
                                 <div className="text-xs uppercase tracking-wider text-muted-foreground">

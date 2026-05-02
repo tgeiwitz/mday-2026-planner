@@ -497,3 +497,7 @@ list of bugs.
 - [ ] Fix root cause
 - [ ] Verify create succeeds end-to-end
 - [ ] Save checkpoint
+
+## v48 Go-Live Bug Fixes
+- [x] Driver assignment dropdown on Routes table row not committing (replaced InlineEnumInput with native select on driver + status fields)
+- [ ] Wodely-assigned stops should flow into routes (link cached Wodely tasks to planner routes via routePlanId/routeName)

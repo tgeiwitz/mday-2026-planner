@@ -641,6 +641,17 @@ export const appRouter = router({
         await db.deleteRoute(input.id);
         return { success: true };
       }),
+    /**
+     * Wodely-confirmed stop counts grouped by routeName / driverName, plus
+     * an unassigned bucket per (date, merchant). Used by the Routes page to
+     * show "Wodely Confirmed" alongside planner stops.
+     *
+     * Match rule: a Wodely task lines up with a planner route when its
+     * `routeName` matches the planner route's `routeCode` (case-insensitive).
+     * Until dispatch builds Wodely route plans, all tasks land in the
+     * unassigned-by-date-merchant bucket.
+     */
+    wodelyConfirmedSummary: publicProcedure.query(() => db.getWodelyConfirmedSummary()),
   }),
 
   wodely: router({

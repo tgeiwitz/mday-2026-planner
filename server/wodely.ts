@@ -46,6 +46,14 @@ export type WodelyTask = {
   completedDateTime?: string;
   dispatchAddress?: string;
   destinationAddress?: string;
+  // Route assignment from Wodely (null until dispatcher builds a route plan)
+  routePlanId?: number | null;
+  routeSortId?: number | null;
+  routeName?: string | null;
+  driverName?: string | null;
+  assignedToTeamId?: number | null;
+  assignedToDriverUserId?: string | null;
+  zoneId?: number | null;
 };
 
 export async function searchTasks(params: {

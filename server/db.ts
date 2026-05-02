@@ -1050,6 +1050,12 @@ export async function cacheWodelyTasks(
     merchantId: string;
     afterDateTime?: string;
     deliveryFee?: number;
+    routePlanId?: number | null;
+    routeSortId?: number | null;
+    routeName?: string | null;
+    driverName?: string | null;
+    statusId?: number | null;
+    zoneId?: number | null;
   }>,
   /** Optional sync window: if provided, the cache rows whose deliveryDate falls
    * inside [windowStartIso, windowEndIso] (NY-local YYYY-MM-DD) are deleted
@@ -1087,6 +1093,12 @@ export async function cacheWodelyTasks(
       merchant: t.merchantId === LAF ? "LAF" : "BC",
       deliveryDate: localDate as unknown as Date,
       taskFee: String((t.deliveryFee ?? 0).toFixed(2)),
+      routePlanId: t.routePlanId ?? null,
+      routeSortId: t.routeSortId ?? null,
+      routeName: (t.routeName ?? null) as any,
+      driverName: (t.driverName ?? null) as any,
+      taskStatusId: t.statusId ?? null,
+      zoneId: t.zoneId ?? null,
     });
   }
   if (rows.length === 0) return;
@@ -1102,6 +1114,12 @@ export async function cacheWodelyTasks(
           merchant: sql`VALUES(merchant)`,
           deliveryDate: sql`VALUES(deliveryDate)`,
           taskFee: sql`VALUES(taskFee)`,
+          routePlanId: sql`VALUES(routePlanId)`,
+          routeSortId: sql`VALUES(routeSortId)`,
+          routeName: sql`VALUES(routeName)`,
+          driverName: sql`VALUES(driverName)`,
+          taskStatusId: sql`VALUES(taskStatusId)`,
+          zoneId: sql`VALUES(zoneId)`,
           syncedAt: sql`CURRENT_TIMESTAMP`,
         },
       });
@@ -2138,4 +2156,53 @@ export async function getRouteReferenceForecast(
     trailing60Avg: n60 > 0 ? Math.round(count60 / n60) : 0,
     lyMDayHolidayPerStop: 0, // placeholder until historical holiday data is loaded
   };
+}
+
+
+// ======================
+// Wodely-confirmed summary (read-only)
+// ======================
+/**
+ * Returns Wodely-confirmed stops grouped by (routeName) and (date, merchant).
+ *
+ * Shape:
+ *   byRouteName: { [routeNameLower]: count }
+ *   byDateMerchant: { [`${YYYY-MM-DD}|${LAF|BC}`]: { total, withRoute, withoutRoute } }
+ *
+ * Excludes Completed (taskStatusId = 50) so we report only "open" confirmed work.
+ */
+export async function getWodelyConfirmedSummary(): Promise<{
+  byRouteName: Record<string, number>;
+  byDateMerchant: Record<string, { total: number; withRoute: number; withoutRoute: number }>;
+}> {
+  const db = await getDb();
+  const empty = { byRouteName: {} as Record<string, number>, byDateMerchant: {} as Record<string, { total: number; withRoute: number; withoutRoute: number }> };
+  if (!db) return empty;
+  const rows = await db.execute(_sql`
+    SELECT deliveryDate, merchant, routeName, taskStatusId
+    FROM wodely_task_cache
+    WHERE taskStatusId IS NULL OR taskStatusId <> 50
+  `);
+  // mysql2 returns [rows, fields] in promise mode; drizzle execute returns Result with rows on .rows or .[0]
+  const list: Array<{ deliveryDate: any; merchant: string; routeName: string | null; taskStatusId: number | null }> =
+    Array.isArray((rows as any)[0]) ? (rows as any)[0] : ((rows as any).rows ?? rows);
+  const byRouteName: Record<string, number> = {};
+  const byDateMerchant: Record<string, { total: number; withRoute: number; withoutRoute: number }> = {};
+  for (const r of list) {
+    const dateIso = r.deliveryDate instanceof Date
+      ? `${r.deliveryDate.getUTCFullYear()}-${String(r.deliveryDate.getUTCMonth() + 1).padStart(2, "0")}-${String(r.deliveryDate.getUTCDate()).padStart(2, "0")}`
+      : String(r.deliveryDate).slice(0, 10);
+    const key = `${dateIso}|${r.merchant}`;
+    if (!byDateMerchant[key]) byDateMerchant[key] = { total: 0, withRoute: 0, withoutRoute: 0 };
+    byDateMerchant[key].total += 1;
+    const rn = (r.routeName ?? "").toString().trim();
+    if (rn) {
+      const lc = rn.toLowerCase();
+      byRouteName[lc] = (byRouteName[lc] ?? 0) + 1;
+      byDateMerchant[key].withRoute += 1;
+    } else {
+      byDateMerchant[key].withoutRoute += 1;
+    }
+  }
+  return { byRouteName, byDateMerchant };
 }
