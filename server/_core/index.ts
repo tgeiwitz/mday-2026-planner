@@ -58,11 +58,11 @@ async function startServer() {
     console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
   }
 
-  // Bind to 0.0.0.0 explicitly so Railway's IPv4 edge proxy can reach the
-  // container — Node's default listen(port) binds to IPv6 :: only on some
-  // runtimes, which causes the upstream proxy to 502.
-  server.listen(port, "0.0.0.0", () => {
-    console.log(`Server running on http://0.0.0.0:${port}/`);
+  // Bind to "::" (IPv6 unspecified) so we accept both IPv4 (via dual-stack)
+  // and IPv6 connections — Railway's edge proxy may use either stack to
+  // reach the container, and binding to 0.0.0.0 alone refuses IPv6.
+  server.listen(port, "::", () => {
+    console.log(`Server running on http://[::]:${port}/`);
   });
 }
 
