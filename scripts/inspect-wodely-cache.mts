@@ -1,36 +1,78 @@
-import "../server/_core/env";
-import { getDb } from "../server/_core/db";
-import { wodelyTaskCache } from "../drizzle/schema";
+// Run with `tsx scripts/inspect-wodely-cache.mts` against a live DATABASE_URL.
+// Prints the wodely_task_cache distribution by (deliveryDate, merchant) and the
+// matching dailyForecast.lafConfirmed/bcConfirmed values so v46 date-bucket
+// drift can be diagnosed in one read.
+
+import { getDb } from "../server/db";
+import { wodelyTaskCache, dailyForecast } from "../drizzle/schema";
 import { sql } from "drizzle-orm";
 
 const db = await getDb();
 if (!db) {
-  console.error("no db");
+  console.error("no db (set DATABASE_URL)");
   process.exit(1);
 }
 
-// Group by deliverDate (NY-local) and merchantId — what does the actual cache look like?
-const rows = await db
+const cacheRows = await db
   .select({
-    deliverDate: wodelyTaskCache.deliverDate,
-    merchantId: wodelyTaskCache.merchantId,
+    deliveryDate: wodelyTaskCache.deliveryDate,
+    merchant: wodelyTaskCache.merchant,
+    taskStatusId: wodelyTaskCache.taskStatusId,
     count: sql<number>`count(*)`,
   })
   .from(wodelyTaskCache)
-  .groupBy(wodelyTaskCache.deliverDate, wodelyTaskCache.merchantId)
-  .orderBy(wodelyTaskCache.deliverDate);
+  .groupBy(
+    wodelyTaskCache.deliveryDate,
+    wodelyTaskCache.merchant,
+    wodelyTaskCache.taskStatusId,
+  )
+  .orderBy(wodelyTaskCache.deliveryDate);
 
-console.log("date\tmerchant\tcount");
-for (const r of rows) {
-  const d =
-    r.deliverDate instanceof Date
-      ? r.deliverDate.toISOString().slice(0, 10)
-      : String(r.deliverDate).slice(0, 10);
-  console.log(`${d}\t${r.merchantId}\t${r.count}`);
+const isoOf = (d: unknown) =>
+  d instanceof Date
+    ? `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`
+    : String(d).slice(0, 10);
+
+const cacheBy = new Map<string, { laf: number; bc: number; cancelled: number }>();
+for (const r of cacheRows) {
+  const k = isoOf(r.deliveryDate);
+  if (!cacheBy.has(k)) cacheBy.set(k, { laf: 0, bc: 0, cancelled: 0 });
+  const row = cacheBy.get(k)!;
+  if (r.taskStatusId === 50) {
+    row.cancelled += Number(r.count);
+  } else if (r.merchant === "LAF") {
+    row.laf += Number(r.count);
+  } else if (r.merchant === "BC") {
+    row.bc += Number(r.count);
+  }
 }
 
-// Also: what's the columns? Maybe completedAt vs deliverDate
-const sample = await db.select().from(wodelyTaskCache).limit(2);
-console.log("\nsample row:", JSON.stringify(sample[0], null, 2));
+const fcRows = await db.select().from(dailyForecast);
+const fcBy = new Map<string, { laf: number; bc: number }>();
+for (const f of fcRows) {
+  fcBy.set(isoOf(f.forecastDate), {
+    laf: Number(f.lafConfirmed) || 0,
+    bc: Number(f.bcConfirmed) || 0,
+  });
+}
+
+const allDates = new Set<string>();
+for (const k of cacheBy.keys()) allDates.add(k);
+for (const k of fcBy.keys()) allDates.add(k);
+const sorted = [...allDates].sort();
+
+console.log("date        cache_laf cache_bc cache_cxl fc_laf fc_bc drift");
+for (const d of sorted) {
+  const c = cacheBy.get(d) ?? { laf: 0, bc: 0, cancelled: 0 };
+  const f = fcBy.get(d) ?? { laf: 0, bc: 0 };
+  const driftLaf = f.laf - c.laf;
+  const driftBc = f.bc - c.bc;
+  const flag =
+    driftLaf !== 0 || driftBc !== 0
+      ? `LAF${driftLaf >= 0 ? "+" : ""}${driftLaf} BC${driftBc >= 0 ? "+" : ""}${driftBc}`
+      : "";
+  const pad = (n: number, w = 9) => String(n).padEnd(w);
+  console.log(`${d}  ${pad(c.laf)}${pad(c.bc)}${pad(c.cancelled)} ${pad(f.laf, 6)}${pad(f.bc, 5)}${flag}`);
+}
 
 process.exit(0);

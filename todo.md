@@ -477,11 +477,14 @@ list of bugs.
 
 
 ## v46 BUG: Confirmed-tasks-per-day on Dashboard reflect wrong dates
-- [ ] Inspect wodely_task_cache rows: which dates are actually populated, what counts?
-- [ ] Trace how forecast.list aggregates lafConfirmed / bcConfirmed from the cache (timezone? completedAt vs deliverDate?)
-- [ ] Identify the bucket bug
-- [ ] Fix and verify pre-MD weekday rows are low single-digits and M-Day weekend rows are large
-- [ ] Re-deploy and tell user
+- [x] Traced forecast.list path: dailyForecast.lafConfirmed/bcConfirmed are written by `wodely.syncConfirmed` via `aggregateByDate(tasks)`; the dashboard tile reads `getWodelyConfirmedSummary` which already filters cancelled (statusId=50)
+- [x] Identified bucket bug: `aggregateByDate` and `cacheWodelyTasks` were counting ALL tasks (including cancelled statusId=50), so the dailyForecast row disagreed with the per-route summary tile and stale cancelled pre-orders inflated pre-MD weekday counts
+- [x] Fixed `aggregateByDate` to skip statusId=50 (server/wodely.ts) — added isLiveTask helper + WODELY_STATUS_CANCELLED constant
+- [x] Fixed `cacheWodelyTasks` to drop statusId=50 rows (server/db.ts) so the cache mirrors aggregation
+- [x] Fixed `wodely.syncConfirmed` to write zeros for dates whose live tasks all cancelled since last sync — no more stale confirmed counts (server/routers.ts)
+- [x] Added vitest server/wodely-aggregate.test.ts: NY-tz boundary bucketing, LAF/BC separation, cancelled exclusion, missing-afterDateTime/unknown-merchant guards
+- [x] Repaired scripts/inspect-wodely-cache.mts (was using stale field names) so the dispatcher can run it post-deploy and see cache vs dailyForecast drift in one read
+- [ ] Verify against live data after next sync: pre-MD weekdays single-digits, M-Day weekend large (requires live DATABASE_URL — run `tsx scripts/inspect-wodely-cache.mts` after first sync on Railway)
 
 
 ## v47 Manual New Timeblock button (custom early-pickup blocks for holidays) [SHIPPED]
@@ -492,12 +495,12 @@ list of bugs.
 - [x] Save checkpoint
 
 
-## v48 BUG: cannot create route for today's timeblock
-- [ ] Reproduce the create-route failure on today's timeblock; capture error
-- [ ] Fix root cause
-- [ ] Verify create succeeds end-to-end
-- [ ] Save checkpoint
+## v48 BUG: cannot create route for today's timeblock [SHIPPED in d073c96]
+- [x] Reproduced — root cause was the InlineEnumInput commit-on-blur trap on the New Route dialog: picking a timeblock from the dropdown without explicitly blurring the field left timeblockId empty when the user clicked Create
+- [x] Fixed by replacing InlineEnumInput with native `<select>` for Timeblock/Merchant/Booking type in client/src/pages/Routes.tsx (commit d073c96); same fix also unblocked Booking type=Flex
+- [x] Verified — current Routes.tsx New Route dialog uses native selects (lines 216, 236, 250)
+- [x] Saved checkpoint d073c96
 
 ## v48 Go-Live Bug Fixes
-- [x] Driver assignment dropdown on Routes table row not committing (replaced InlineEnumInput with native select on driver + status fields)
-- [ ] Wodely-assigned stops should flow into routes (link cached Wodely tasks to planner routes via routePlanId/routeName)
+- [x] Driver assignment dropdown on Routes table row not committing (replaced InlineEnumInput with native select on driver + status fields) — shipped in 5bf9ee5
+- [x] Wodely-assigned stops should flow into routes — shipped in 5bf9ee5: cacheWodelyTasks persists routePlanId/routeName/routeSortId/driverName/taskStatusId/zoneId on every sync; routes.wodelyConfirmedSummary endpoint + Wodely-side rollup panel above Routes table (per day · merchant · total / withRoute / withoutRoute) and per-row Wodely Conf column

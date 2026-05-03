@@ -111,14 +111,26 @@ export async function fetchConfirmedOrders(
   return results;
 }
 
+// Wodely status id 50 = Cancelled. These rows must not contribute to confirmed
+// counts, planner cache, or the dashboard summary — keeping them aligned across
+// all three readers prevents the dailyForecast row from disagreeing with the
+// per-route summary tile.
+export const WODELY_STATUS_CANCELLED = 50;
+
+export function isLiveTask(t: Pick<WodelyTask, "statusId">): boolean {
+  return t.statusId !== WODELY_STATUS_CANCELLED;
+}
+
 /**
  * Aggregate tasks to per-date per-merchant counts using afterDateTime.
  * Converts afterDateTime (UTC) to America/New_York date so it aligns with our day grid.
+ * Cancelled tasks (statusId=50) are excluded so this matches getWodelyConfirmedSummary.
  */
 export function aggregateByDate(tasks: WodelyTask[]) {
   const out: Record<string, { laf: number; bc: number }> = {};
   for (const t of tasks) {
     if (!t.afterDateTime) continue;
+    if (!isLiveTask(t)) continue;
     // Convert UTC -> America/New_York date
     const d = new Date(t.afterDateTime);
     const localDate = d.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
