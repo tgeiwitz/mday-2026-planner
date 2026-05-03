@@ -80,7 +80,7 @@ for (const [d, merchant, tasks, avgFee] of rawRows) {
 const url = new URL(process.env.DATABASE_URL);
 const conn = await mysql.createConnection({
   host: url.hostname, port: url.port, user: url.username, password: url.password,
-  database: url.pathname.slice(1), ssl: {}, multipleStatements: true,
+  database: url.pathname.slice(1), ssl: { rejectUnauthorized: false }, multipleStatements: true,
 });
 
 // Apply migration idempotently (CREATE TABLE IF NOT EXISTS workaround: check first)
