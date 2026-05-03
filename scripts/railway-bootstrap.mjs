@@ -63,8 +63,15 @@ if (histCount === 0) {
 
 const zoneTaskCount = await tableCount(conn, "zone_task_history_2025");
 if (zoneTaskCount === 0) {
-  console.log("[bootstrap] Step 4/5: seed-zone-task-history.mjs");
-  run("node scripts/seed-zone-task-history.mjs");
+  // The seed reads /tmp/zone_task_data.json which is dev-local; skip if absent.
+  // v42 inferZoneMixForRoute falls back to zone_metrics when this table is empty.
+  const fs = await import("node:fs");
+  if (fs.existsSync("/tmp/zone_task_data.json")) {
+    console.log("[bootstrap] Step 4/5: seed-zone-task-history.mjs");
+    run("node scripts/seed-zone-task-history.mjs");
+  } else {
+    console.log("[bootstrap] Step 4/5: skipped — /tmp/zone_task_data.json absent (zone_metrics fallback in effect)");
+  }
 } else {
   console.log(`[bootstrap] Step 4/5: skipped — zone_task_history_2025 has ${zoneTaskCount} rows`);
 }
