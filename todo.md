@@ -476,12 +476,12 @@ list of bugs.
 - [x] Final checkpoint — v44 (00b42b53) is the go-live build
 
 
-## v46 BUG: Confirmed-tasks-per-day on Dashboard reflect wrong dates
-- [ ] Inspect wodely_task_cache rows: which dates are actually populated, what counts?
-- [ ] Trace how forecast.list aggregates lafConfirmed / bcConfirmed from the cache (timezone? completedAt vs deliverDate?)
-- [ ] Identify the bucket bug
-- [ ] Fix and verify pre-MD weekday rows are low single-digits and M-Day weekend rows are large
-- [ ] Re-deploy and tell user
+## v46 BUG: Confirmed-tasks-per-day on Dashboard reflect wrong dates [RESOLVED via v48 sync rewrite]
+- [x] Inspect wodely_task_cache rows: which dates are actually populated, what counts? (245 tasks across 17 days after v48 fresh sync; today 2026-05-02 LAF = 17 tasks on Wodely route flex_a_sat_05_02_26)
+- [x] Trace how forecast.list aggregates lafConfirmed / bcConfirmed from the cache (NY-local date bucketing on deliverDate; v48 cacheWodelyTasks now deletes the date window before insert so stale rows can't pollute counts — fix landed in v47 c24853a)
+- [x] Identify the bucket bug — root cause was stale rows accumulating; the date-window delete fixes it
+- [x] Fix and verify pre-MD weekday rows are low single-digits and M-Day weekend rows are large (verified via v48 wodelyConfirmedSummary rollup panel)
+- [x] Re-deploy and tell user
 
 
 ## v47 Manual New Timeblock button (custom early-pickup blocks for holidays) [SHIPPED]
@@ -492,12 +492,14 @@ list of bugs.
 - [x] Save checkpoint
 
 
-## v48 BUG: cannot create route for today's timeblock
-- [ ] Reproduce the create-route failure on today's timeblock; capture error
-- [ ] Fix root cause
-- [ ] Verify create succeeds end-to-end
-- [ ] Save checkpoint
+## v48 BUG: cannot create route for today's timeblock [RESOLVED]
+- [x] Reproduce the create-route failure on today's timeblock; capture error — InlineEnumInput in New Route dialog (Timeblock/Merchant/Booking) was committing on blur only, so picking from the dropdown without explicit blur silently dropped the value (commit d073c96)
+- [x] Fix root cause — replaced the three Selects in New Route dialog with native select elements that commit on change
+- [x] Verify create succeeds end-to-end — 36/36 vitest pass; manual smoke test with Flex booking type successful
+- [x] Save checkpoint (d073c96)
 
-## v48 Go-Live Bug Fixes
+## v48 Go-Live Bug Fixes [SHIPPED]
 - [x] Driver assignment dropdown on Routes table row not committing (replaced InlineEnumInput with native select on driver + status fields)
-- [ ] Wodely-assigned stops should flow into routes (link cached Wodely tasks to planner routes via routePlanId/routeName)
+- [x] Wodely-assigned stops should flow into routes — cacheWodelyTasks persists routePlanId/routeName/routeSortId/driverName/taskStatusId/zoneId on every sync; routes.wodelyConfirmedSummary endpoint + per-day/per-merchant rollup panel above Routes table; per-row Wodely Conf column added (commit 5bf9ee5)
+- [x] 37/39 vitest passing (2 skipped)
+- [x] Save checkpoint (5bf9ee5)
