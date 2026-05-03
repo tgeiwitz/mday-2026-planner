@@ -669,14 +669,14 @@ export const appRouter = router({
         const key = d instanceof Date
           ? `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`
           : String(d).slice(0, 10);
-        const counts = agg[key];
-        if (counts) {
-          await db.updateDailyForecast(row.id, {
-            lafConfirmed: counts.laf,
-            bcConfirmed: counts.bc,
-          });
-          updated += 1;
-        }
+        const counts = agg[key] ?? { laf: 0, bc: 0 };
+        // Always write — including zeros — so dates whose live tasks were all
+        // cancelled since the last sync don't keep stale confirmed counts.
+        await db.updateDailyForecast(row.id, {
+          lafConfirmed: counts.laf,
+          bcConfirmed: counts.bc,
+        });
+        updated += 1;
       }
       // Cache per-task fees so routes can compute confirmed revenue.
       // Pass the sync window so stale tasks (cancelled/removed in Wodely)

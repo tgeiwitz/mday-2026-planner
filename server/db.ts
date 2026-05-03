@@ -1086,6 +1086,9 @@ export async function cacheWodelyTasks(
   const rows: Array<typeof wodelyTaskCache.$inferInsert> = [];
   for (const t of tasks) {
     if (!t.afterDateTime) continue;
+    // statusId 50 = Cancelled in Wodely; drop so the cache mirrors what
+    // aggregateByDate() and getWodelyConfirmedSummary() count.
+    if ((t as { statusId?: number | null }).statusId === 50) continue;
     const dt = new Date(t.afterDateTime);
     const localDate = dt.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
     rows.push({
